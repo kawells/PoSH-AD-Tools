@@ -1,11 +1,11 @@
 ﻿# Comments #####################################################################
-# Application Name: NARA AD User MGMT Script
+# Application Name: AD User Management Script
 # Author: Kevin Wells
 # Version: 1.0
 # Created: September 13, 2019
 #
 # Notes:
-# Must be run as a_account
+# Must be run as administrator
 # 
 # Prerequisites:
 # The polling engine must have the features below installed.
