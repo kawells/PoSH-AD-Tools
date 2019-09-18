@@ -1,5 +1,5 @@
 # Comments #####################################################################
-# Application Name: AD User Management Script
+# Application Name: Active Directory Tools
 # Author: Kevin Wells
 # Version: 1.2
 # Created: September 13, 2019
@@ -50,14 +50,12 @@ function MainMenu {
             CompMenu
         }
         if ($menu -notin (1,2,3)) {
-            "`nERROR: Invalid selection."
+            Write-Error "Invalid selection."
             PressEnter
         }
     } While ($menu -ne '3')
     Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
 }
-
-
 
 function Get-User {
     do { 
@@ -78,6 +76,7 @@ function Get-User {
             cls
             "Active Directory search results for " + $userInput + ":"
             if ($accountExist -eq "true"){
+                $global:adUser = Get-ADUser $userInput
                 "`n Account found.`n Username: " + $userInput
                 Write-Output "$(Get-TimeStamp) Account found in AD" | Out-file $logFile -append 
                 if ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "True" ){
@@ -92,14 +91,14 @@ function Get-User {
                     Write-Host " Status: Unable to determine lock status"
                     Write-Output "$(Get-TimeStamp) Unable to determine account lock status" | Out-file $logFile -append 
                 }
-                $confirmation = Read-Host "`nIs this the correct username? (y or n)"
+                $conf = Read-Host "`nIs this the correct username? (y or n)"
             }
             else {
                 Read-Host -Prompt "`n Account not found.`n`nPress Enter to try again"
                 Write-Output "$(Get-TimeStamp) Account not found" | Out-file $logFile -append 
             }
             cls
-    } While ($confirmation -ne 'y')
+    } While ($conf -ne 'y')
 }
 
 function Get-Comp {
@@ -107,7 +106,6 @@ function Get-Comp {
             cls
             # Computer name prompt
             $userInput = Read-Host -Prompt "Enter the computer name"
-            $global:adComp = $userInput
             Write-Output "$(Get-TimeStamp) User entered computer name: $userInput" | Out-file $logFile -append
 
             # Verify computer exists
@@ -117,38 +115,51 @@ function Get-Comp {
             cls
             "Active Directory search results for " + $userInput + ":"
             if ($accountExist -eq "true"){
-                "`n Computer found.`n Computer name: " + $userInput
+                $global:adComp = Get-ADComputer $userInput
+                "`n Computer found.`n Computer name: " + $global:adComp.Name
                 Write-Output "$(Get-TimeStamp) Computer found in AD" | Out-file $logFile -append 
-                $confirmation = Read-Host "`nIs this the correct computer name? (y or n)"
+                $conf = Read-Host "`nIs this the correct computer name? (y or n)"
             }
             else {
                 Read-Host -Prompt "`n Computer not found.`n`nPress Enter to try again"
                 Write-Output "$(Get-TimeStamp) Computer not found" | Out-file $logFile -append 
             }
             cls
-    } While ($confirmation -ne 'y')
+    } While ($conf -ne 'y')
 }
 
 function Get-Bl {
-    "Computer name: " + $global:adComp
+    "Computer name: " + $global:adComp.Name
     Write-Output "$(Get-TimeStamp) Entered Bitlocker menu" | Out-file $logFile -append
 
-    $confirmation = Read-Host "`n Copy Bitlocker key to clipboard? (y or n)"
-    if ($confirmation -eq 'y') {
-        Get-ADComputer $global:adComp -Properties * | select -ExpandProperty ms-Mcs-AdmPwd | Set-Clipboard
-        "`n Password copied to clipboard."    
-    } else { "`n Password not copied to clipboard." }
+    # Get and display Bitlocker key(s)
+    $bitlocker = (Get-ADObject -Filter {objectclass -eq 'msFVE-RecoveryInformation'} -SearchBase $global:adComp.DistinguishedName -Properties 'msFVE-RecoveryPassword').'msFVE-RecoveryPassword'
+    "`n Bitlocker recovery key(s):"
+    $bitlocker
+    Write-Output "$(Get-TimeStamp) Bitlocker keys: $bitlocker" | Out-file $logFile -append
+    
+    # Copy to clipboard prompt
+    $conf = Read-Host "`n Copy Bitlocker key to clipboard? (y or n)"
+    if ($conf -eq 'y') {
+        Set-Clipboard -Value $bitlocker
+        "`n Bitlocker key copied to clipboard."
+        Write-Output "$(Get-TimeStamp) Bitlocker key copied to clipboard" | Out-file $logFile -append  
+    } else { "`n Bitlocker key not copied to clipboard." }
     PressEnter
 }
 
 function Get-Laps {
-    "Computer name: " + $global:adComp
+    "Computer name: " + $global:adComp.Name
     Write-Output "$(Get-TimeStamp) Entered LAPS menu" | Out-file $logFile -append
-    $laps = Get-ADComputer $global:adComp -Properties * | select -ExpandProperty ms-Mcs-AdmPwd
-    "`n Local administrator password: $laps"
-    Write-Output "$(Get-TimeStamp) LAPS password: $laps" | Out-file $logFile -append
-    $confirmation = Read-Host "`n Copy password to clipboard? (y or n)"
-    if ($confirmation -eq 'y') {
+
+    # Display LAPS
+    $laPass = Get-ADComputer $global:adComp -Properties * | select -ExpandProperty ms-Mcs-AdmPwd
+    "`n LAPS: $laPass"
+    Write-Output "$(Get-TimeStamp) LAPS: $laPass" | Out-file $logFile -append
+
+    # Copy to clipboard prompt
+    $conf = Read-Host "`n Copy password to clipboard? (y or n)"
+    if ($conf -eq 'y') {
         Get-ADComputer $global:adComp -Properties * | select -ExpandProperty ms-Mcs-AdmPwd | Set-Clipboard
         "`n Password copied to clipboard."
         Write-Output "$(Get-TimeStamp) Password copied to clipboard" | Out-file $logFile -append    
@@ -160,10 +171,10 @@ function CompMenu {
     do {
         cls
         Write-Output "$(Get-TimeStamp) Entered computer menu" | Out-file $logFile -append
-        "Computer name: " + $global:adComp
+        "Computer name: " + $global:adComp.Name
 
         # Prompt for menu selection
-        $menu = Read-Host "`n 1: Enter new computer name`n 2: Display Bitlocker recovery key`n 3: Display local administrator password (LAPS) `n 4: Exit to Main Menu`n`nPlease make a selection"
+        $menu = Read-Host "`n 1: Enter new computer name`n 2: Display Bitlocker recovery key`n 3: Display local administrator password (LAPS)`n 4: Reset computer account`n 5: Exit to Main Menu`n`nPlease make a selection"
         cls
         if ($menu -eq '1') {
             Get-Comp
@@ -175,20 +186,27 @@ function CompMenu {
             Get-Laps
         }
         if ($menu -eq '4') {
-
+            CompReset
         }
         if ($menu -notin (1,2,3,4,5)) {
-            "`nERROR: Invalid selection."
+            Write-Error "Invalid selection."
             PressEnter
         }
     } While ($menu -ne '5')
 }
 
+function CompReset {
+    "Computer name: " + $global:adComp.Name
+    Write-Output "$(Get-TimeStamp) Entered reset menu" | Out-file $logFile -append
+
+}
+
+
 function UserMenu {  
     do {
         cls
         Write-Output "$(Get-TimeStamp) Entered user menu" | Out-file $logFile -append
-        "Username: " + $global:adUser
+        "Username: " + $global:adUser.Name
 
         # Prompt for menu selection
         $menu = Read-Host "`n 1: Enter new username`n 2: Reset the password`n 3: Unlock the account`n 4: Move to short term debarment`n 5: Move to long term debarment`n 6: Move to permanent debarment`n 7: Exit to Main Menu`n`nPlease make a selection"
@@ -210,14 +228,14 @@ function UserMenu {
         }
         # Catch exceptions for invalid menu selections
         if ($menu -notin (1,2,3,4,5,6,7)) {
-            "`nERROR: Invalid selection."
+            Write-Error "Invalid selection."
             PressEnter
         }
     } While ($menu -ne '7')
 }
 
 function UserReset {
-    "Username: " + $global:adUser
+    "Username: " + $global:adUser.Name
     # Prompt for new password
     $newpass = Read-Host -Prompt " Enter the new password" -AsSecureString
 
@@ -234,7 +252,7 @@ function UserReset {
 function UserUnlock {
     Write-Output "$(Get-TimeStamp) Entered unlock menu" | Out-file $logFile -append
     
-    "Username: " + $global:adUser
+    "Username: " + $global:adUser.Name
 
     if ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "True" )
     {
@@ -253,7 +271,7 @@ function UserUnlock {
     }
     else
     {
-        "`n Status: ERROR: Unable to determine lock status. Please try again."
+        Write-Error "Unable to determine lock status. Please try again."
         Write-Output "$(Get-TimeStamp) ERROR: Unable to determine lock status" | Out-file $logFile -append
     }  
     PressEnter
@@ -261,7 +279,7 @@ function UserUnlock {
 
 function UserGroup {
     Write-Output "$(Get-TimeStamp) Entered add to group menu for $global:adGroup" | Out-file $logFile -append
-    "Username: " + $global:adUser
+    "Username: " + $global:adUser.Name
 
     # Display current groups
     "`n Current group membership:"   
@@ -276,16 +294,16 @@ function UserGroup {
     
     # If user is not in the group, add user to the group
     else { 
-        "`n Adding " + $global:adUser + " to $global:adGroup..."
+        "`n Adding " + $global:adUser.Name + " to $global:adGroup..."
         Add-ADGroupMember -Identity $global:adGroup -Members $global:adUser
         if ( (Get-ADPrincipalGroupMembership $global:adUser | select name) -like "*$global:adGroup*" )
         {
-            "`n " + $global:adUser + " has successfully been added to $global:adGroup."
+            "`n " + $global:adUser.Name + " has successfully been added to $global:adGroup."
             Write-Output "$(Get-TimeStamp) Added to $global:adGroup" | Out-file $logFile -append
         }
         else
         {
-            "`n ERROR: " + $global:adUser + " has not been added to $global:adGroup. Please try again."
+            Write-Error $global:adUser.Name + " has not been added to $global:adGroup. Please try again."
             Write-Output "$(Get-TimeStamp) ERROR: Unable to add to $global:adGroup" | Out-file $logFile -append
         }
     }    
