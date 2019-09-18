@@ -28,12 +28,13 @@
     github.com/kawells
 #>
 Import-Module activedirectory
+$logDir = "C:\Users\" + $env:UserName + "\Documents\"
+$logFile = $logDir + "adtlog.txt" #location and file name of log file
 ## Declare global vars
 $global:adUser = $null #contains username
 $global:adComp = $null #contains working computer name
-$global:adLocked = $null #status of account lock
-$global:adGroup = $null #contains group name that user will be added to in user-group function
-$logFile = "C:\adtlog.txt" #location and file name of log file
+$global:adLocked = $null #contains status of account lock
+$global:adGroup = $null #contains group name that user will be added to in UserGroup function
 ## Define all functions
 # Displays the timestamp for logging
 function Get-TimeStamp {
@@ -85,7 +86,7 @@ function Get-User {
                 $global:adUser = Get-ADUser $userInput -properties PasswordLastSet
                 Write-Host "`n Account found.`n`n Username:" $global:adUser.Name
                 Write-Host " Password last set on" $global:adUser.PasswordLastSet
-                Write-Output "$(Get-TimeStamp) Account found in AD" | Out-file $logFile -append 
+                Write-Output "$(Get-TimeStamp) Account found in AD" | Out-file $logFile -append               
                 if ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "True" ){
                     Write-Host " Status: Locked"
                     Write-Output "$(Get-TimeStamp) Account status: locked" | Out-file $logFile -append 
@@ -254,6 +255,7 @@ function UserReset {
     $pwdDate = $global:adUser.passwordlastset.ToShortDateString()
     $dateNow = Get-Date
     $dateNow = $dateNow.ToShortDateString()
+    # Validate password reset by comparing date password was set to today's date
     if ($pwdDate -eq $dateNow) {
         " " + $global:adUser.Name + "'s password has been reset.`n"
         Write-Output "$(Get-TimeStamp) Password was reset" | Out-file $logFile -append
@@ -262,7 +264,6 @@ function UserReset {
         Write-Error $global:adUser.Name + "'s password has not been reset. Please try again.`n" -Category InvalidOperation
         Write-Output "$(Get-TimeStamp) ERROR: Password was not reset" | Out-file $logFile -append
     }
-
     # Same thing but require change password at next logon
     #Set-ADAccountPassword $global:adUser -NewPassword $newpass -Reset -PassThru | Set-ADuser -ChangePasswordAtLogon $True
     pause
@@ -310,7 +311,6 @@ function UserGroup {
         "`n " + $global:adUser + " is already a member of $global:adGroup.`n"
         Write-Output "$(Get-TimeStamp) Already in $global:adGroup" | Out-file $logFile -append
     }
-    
     # If user is not in the group, add user to the group
     else { 
         "`n Adding " + $global:adUser.Name + " to $global:adGroup..."
