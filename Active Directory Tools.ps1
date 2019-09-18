@@ -28,10 +28,6 @@ function Get-TimeStamp {
     return "[{0:MM/dd/yy} {0:HH:mm:ss}]" -f (Get-Date)
 }
 
-function PressEnter {
-    Read-Host -Prompt "`nPress Enter to continue"
-}
-
 function MainMenu {
     Write-Output "`n`n$(Get-TimeStamp) Session started" | Out-file $logFile -append  
     do {
@@ -39,21 +35,21 @@ function MainMenu {
         "Main Menu"
         
         # Prompt for menu selection
-        $menu = Read-Host "`n 1: User Management`n 2: Computer Management`n 3: Exit `n`nPlease make a selection"
+        $menu = Read-Host "`n 1: User Management`n 2: Computer Management`n q: Exit `n`nPlease make a selection"
         cls
         if ($menu -eq '1') {
-            Get-User
+            if ($global:adUser -eq $null) { Get-User }
             UserMenu
          }
         if ($menu -eq '2') { 
-            Get-Comp
+            if ($global:adComp -eq $null) { Get-Comp }
             CompMenu
         }
-        if ($menu -notin (1,2,3)) {
+        if ($menu -notin (1,2)) {
             Write-Error "Invalid selection." -Category InvalidData
-            PressEnter
+            pause
         }
-    } While ($menu -ne '3')
+    } While ($menu -ne 'q')
     Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
 }
 
@@ -142,10 +138,10 @@ function Get-Bl {
     $conf = Read-Host "`n Copy Bitlocker key to clipboard? (y or n)"
     if ($conf -eq 'y') {
         Set-Clipboard -Value $bitlocker
-        "`n Bitlocker key copied to clipboard."
+        "`n Bitlocker key copied to clipboard.`n"
         Write-Output "$(Get-TimeStamp) Bitlocker key copied to clipboard" | Out-file $logFile -append  
-    } else { "`n Bitlocker key not copied to clipboard." }
-    PressEnter
+    } else { "`n Bitlocker key not copied to clipboard.`n" }
+    pause
 }
 
 function Get-Laps {
@@ -161,10 +157,10 @@ function Get-Laps {
     $conf = Read-Host "`n Copy password to clipboard? (y or n)"
     if ($conf -eq 'y') {
         Get-ADComputer $global:adComp -Properties * | select -ExpandProperty ms-Mcs-AdmPwd | Set-Clipboard
-        "`n Password copied to clipboard."
+        "`n Password copied to clipboard.`n"
         Write-Output "$(Get-TimeStamp) Password copied to clipboard" | Out-file $logFile -append    
-    } else { "`n Password not copied to clipboard." }
-    PressEnter
+    } else { "`n Password not copied to clipboard.`n" }
+    pause
 }
 
 function CompMenu {
@@ -174,7 +170,7 @@ function CompMenu {
         "Computer name: " + $global:adComp.Name
 
         # Prompt for menu selection
-        $menu = Read-Host "`n 1: Enter new computer name`n 2: Display Bitlocker recovery key`n 3: Display local administrator password (LAPS)`n 4: Exit to Main Menu`n`nPlease make a selection"
+        $menu = Read-Host "`n 1: Enter new computer name`n 2: Display Bitlocker recovery key`n 3: Display local administrator password (LAPS)`n 4: Exit to Main Menu`n q: Exit`n`nPlease make a selection"
         cls
         if ($menu -eq '1') {
             Get-Comp
@@ -185,9 +181,14 @@ function CompMenu {
         if ($menu -eq '3') { 
             Get-Laps
         }
+        if ($menu -eq 'q') {
+            Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
+            exit
+        }
+        # Catch exceptions for invalid menu selections
         if ($menu -notin (1,2,3,4)) {
             Write-Error "Invalid selection." -Category InvalidData
-            PressEnter
+            pause
         }
     } While ($menu -ne '4')
 }
@@ -199,7 +200,7 @@ function UserMenu {
         "Username: " + $global:adUser.Name
 
         # Prompt for menu selection
-        $menu = Read-Host "`n 1: Enter new username`n 2: Reset the password`n 3: Unlock the account`n 4: Move to short term debarment`n 5: Move to long term debarment`n 6: Move to permanent debarment`n 7: Exit to Main Menu`n`nPlease make a selection"
+        $menu = Read-Host "`n 1: Enter new username`n 2: Reset the password`n 3: Unlock the account`n 4: Move to short term debarment`n 5: Move to long term debarment`n 6: Move to permanent debarment`n 7: Exit to Main Menu`n 8: Exit`n`nPlease make a selection"
         cls
         if ($menu -eq '1') { Get-User }
         if ($menu -eq '2') { UserReset }
@@ -216,10 +217,14 @@ function UserMenu {
             $global:adGroup = "SG_PIV_Withdrawal_Permanent"
             UserGroup
         }
+        if ($menu -eq 'q') {
+            Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
+            exit
+        }
         # Catch exceptions for invalid menu selections
         if ($menu -notin (1,2,3,4,5,6,7)) {
             Write-Error "Invalid selection." -Category InvalidData
-            PressEnter
+            pause
         }
     } While ($menu -ne '7')
 }
@@ -234,9 +239,8 @@ function UserReset {
     "`n Resetting password for " + $global:adUser + "..."
     # Same thing but require change password at next logon
     #Set-ADAccountPassword $global:adUser -NewPassword $newpass -Reset -PassThru | Set-ADuser -ChangePasswordAtLogon $True
-
-    " " + $global:adUser + "'s password has been reset."
-    PressEnter
+    " " + $global:adUser + "'s password has been reset.`n"
+    pause
 }
 
 function UserUnlock {
@@ -250,21 +254,21 @@ function UserUnlock {
         Unlock-ADAccount -Identity $global:adUser
         if ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "False")
         {
-            " Status: Account successfully unlocked."
+            " Status: Account successfully unlocked.`n"
             Write-Output "$(Get-TimeStamp) Account unlocked" | Out-file $logFile -append 
         }
     }
     elseif ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "False")
     {
-        "`n Status: Account is already unlocked. No action taken."
+        "`n Status: Account is already unlocked. No action taken.`n"
         Write-Output "$(Get-TimeStamp) Account already unlocked" | Out-file $logFile -append
     }
     else
     {
-        Write-Error "Unable to determine lock status. Please try again." -Category InvalidOperation
+        Write-Error "Unable to determine lock status. Please try again.`n" -Category InvalidOperation
         Write-Output "$(Get-TimeStamp) ERROR: Unable to determine lock status" | Out-file $logFile -append
     }  
-    PressEnter
+    pause
 }
 
 function UserGroup {
@@ -278,7 +282,7 @@ function UserGroup {
     # If user is already in the group, take no action
     if ( (Get-ADPrincipalGroupMembership $global:adUser | select name) -like "*$global:adGroup*" )
     {
-        "`n " + $global:adUser + " is already a member of $global:adGroup."
+        "`n " + $global:adUser + " is already a member of $global:adGroup.`n"
         Write-Output "$(Get-TimeStamp) Already in $global:adGroup" | Out-file $logFile -append
     }
     
@@ -288,16 +292,16 @@ function UserGroup {
         Add-ADGroupMember -Identity $global:adGroup -Members $global:adUser
         if ( (Get-ADPrincipalGroupMembership $global:adUser | select name) -like "*$global:adGroup*" )
         {
-            "`n " + $global:adUser.Name + " has successfully been added to $global:adGroup."
+            "`n " + $global:adUser.Name + " has successfully been added to $global:adGroup.`n"
             Write-Output "$(Get-TimeStamp) Added to $global:adGroup" | Out-file $logFile -append
         }
         else
         {
-            Write-Error $global:adUser.Name + " has not been added to $global:adGroup. Please try again." -Category InvalidOperation
+            Write-Error $global:adUser.Name + " has not been added to $global:adGroup. Please try again.`n" -Category InvalidOperation
             Write-Output "$(Get-TimeStamp) ERROR: Unable to add to $global:adGroup" | Out-file $logFile -append
         }
     }    
-    PressEnter
+    pause
 }
 
 
