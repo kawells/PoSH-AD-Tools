@@ -21,7 +21,7 @@ $global:adUser = $null #contains username
 $global:adComp = $null #comtains working computer name
 $global:adLocked = $null #status of account lock
 $global:adGroup = $null #contains group name that user will be added to in user-group function
-$logFile = "C:\adumlog.txt" #location and file name of log file
+$logFile = "C:\adtlog.txt" #location and file name of log file
 
 # Define all functions
 function Get-TimeStamp {
@@ -50,7 +50,7 @@ function MainMenu {
             CompMenu
         }
         if ($menu -notin (1,2,3)) {
-            Write-Error "Invalid selection."
+            Write-Error "Invalid selection." -Category InvalidData
             PressEnter
         }
     } While ($menu -ne '3')
@@ -174,7 +174,7 @@ function CompMenu {
         "Computer name: " + $global:adComp.Name
 
         # Prompt for menu selection
-        $menu = Read-Host "`n 1: Enter new computer name`n 2: Display Bitlocker recovery key`n 3: Display local administrator password (LAPS)`n 4: Reset computer account`n 5: Exit to Main Menu`n`nPlease make a selection"
+        $menu = Read-Host "`n 1: Enter new computer name`n 2: Display Bitlocker recovery key`n 3: Display local administrator password (LAPS)`n 4: Exit to Main Menu`n`nPlease make a selection"
         cls
         if ($menu -eq '1') {
             Get-Comp
@@ -185,22 +185,12 @@ function CompMenu {
         if ($menu -eq '3') { 
             Get-Laps
         }
-        if ($menu -eq '4') {
-            CompReset
-        }
-        if ($menu -notin (1,2,3,4,5)) {
-            Write-Error "Invalid selection."
+        if ($menu -notin (1,2,3,4)) {
+            Write-Error "Invalid selection." -Category InvalidData
             PressEnter
         }
-    } While ($menu -ne '5')
+    } While ($menu -ne '4')
 }
-
-function CompReset {
-    "Computer name: " + $global:adComp.Name
-    Write-Output "$(Get-TimeStamp) Entered reset menu" | Out-file $logFile -append
-
-}
-
 
 function UserMenu {  
     do {
@@ -228,7 +218,7 @@ function UserMenu {
         }
         # Catch exceptions for invalid menu selections
         if ($menu -notin (1,2,3,4,5,6,7)) {
-            Write-Error "Invalid selection."
+            Write-Error "Invalid selection." -Category InvalidData
             PressEnter
         }
     } While ($menu -ne '7')
@@ -271,7 +261,7 @@ function UserUnlock {
     }
     else
     {
-        Write-Error "Unable to determine lock status. Please try again."
+        Write-Error "Unable to determine lock status. Please try again." -Category InvalidOperation
         Write-Output "$(Get-TimeStamp) ERROR: Unable to determine lock status" | Out-file $logFile -append
     }  
     PressEnter
@@ -303,7 +293,7 @@ function UserGroup {
         }
         else
         {
-            Write-Error $global:adUser.Name + " has not been added to $global:adGroup. Please try again."
+            Write-Error $global:adUser.Name + " has not been added to $global:adGroup. Please try again." -Category InvalidOperation
             Write-Output "$(Get-TimeStamp) ERROR: Unable to add to $global:adGroup" | Out-file $logFile -append
         }
     }    
