@@ -1,4 +1,12 @@
-# AD-Tools
-AD Tools for Powershell
+# PoSH-AD-Tools
+Active Directory Tools for Powershell
 
-This is a set of basic user management tools using a text-based menu to perform routine tasks. Must be run as administrator.
+# Notes:
+Must be run as administrator
+ 
+# Prerequisites:
+The polling engine must have the features below installed.
++- Remote Server Administration Tools
+|-+ Role Administration Tools
+|-+ AD DS and AD LDS Tools
+|-+ Active Directory module for Windows PowerShell.
