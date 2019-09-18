@@ -32,24 +32,27 @@ function MainMenu {
     Write-Output "`n`n$(Get-TimeStamp) Session started" | Out-file $logFile -append  
     do {
         cls
-        "Main Menu"
-        
-        # Prompt for menu selection
-        $menu = Read-Host "`n 1: User Management`n 2: Computer Management`n q: Exit `n`nPlease make a selection"
+        Write-Host "================ Main Menu ================"
+        Write-Host " 1: User management menu"
+        Write-Host " 2: Computer management menu"
+        Write-Host " Q: Quit"
+        $selection = Read-Host "Please make a selection"
         cls
-        if ($menu -eq '1') {
-            if ($global:adUser -eq $null) { Get-User }
-            UserMenu
-         }
-        if ($menu -eq '2') { 
-            if ($global:adComp -eq $null) { Get-Comp }
-            CompMenu
+        switch ($selection){
+            '1' {
+                if ($global:adUser -eq $null) { Get-User }
+                UserMenu
+            }
+            '2' {
+                if ($global:adComp -eq $null) { Get-Comp }
+                CompMenu
+            }
         }
-        if ($menu -notin (1,2)) {
+        if ($selection -notin (1,2,'q')) {
             Write-Error "Invalid selection." -Category InvalidData
             pause
         }
-    } While ($menu -ne 'q')
+    } until ($selection -eq 'q')
     Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
 }
 
@@ -167,66 +170,77 @@ function CompMenu {
     do {
         cls
         Write-Output "$(Get-TimeStamp) Entered computer menu" | Out-file $logFile -append
-        "Computer name: " + $global:adComp.Name
-
-        # Prompt for menu selection
-        $menu = Read-Host "`n 1: Enter new computer name`n 2: Display Bitlocker recovery key`n 3: Display local administrator password (LAPS)`n 4: Exit to Main Menu`n q: Exit`n`nPlease make a selection"
+        Write-Host "================ Computer Menu:" $global:adComp.Name "================"
+        Write-Host " 1: Enter a new computer name"
+        Write-Host " 2: Display the Bitlocker recovery key"
+        Write-Host " 3: Display local administrator password (LAPS)"
+        Write-Host " M: Return to the main menu"
+        Write-Host " Q: Quit"
+        $selection = Read-Host "Please make a selection"
         cls
-        if ($menu -eq '1') {
-            Get-Comp
-         }
-        if ($menu -eq '2') { 
-            Get-Bl
+        switch ($selection){
+            '1' {
+                Get-Comp
+            }
+            '2' {
+                Get-Bl
+            }
+            '3' {
+                Get-Laps
+            }
+            'q' {
+                Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
+                exit
+            }
         }
-        if ($menu -eq '3') { 
-            Get-Laps
-        }
-        if ($menu -eq 'q') {
-            Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
-            exit
-        }
-        # Catch exceptions for invalid menu selections
-        if ($menu -notin (1,2,3,4)) {
+        if ($selection -notin (1,2,3,'m','q')) {
             Write-Error "Invalid selection." -Category InvalidData
             pause
         }
-    } While ($menu -ne '4')
+    } until ($selection -eq 'm')
 }
 
 function UserMenu {  
     do {
         cls
         Write-Output "$(Get-TimeStamp) Entered user menu" | Out-file $logFile -append
-        "Username: " + $global:adUser.Name
-
-        # Prompt for menu selection
-        $menu = Read-Host "`n 1: Enter new username`n 2: Reset the password`n 3: Unlock the account`n 4: Move to short term debarment`n 5: Move to long term debarment`n 6: Move to permanent debarment`n 7: Exit to Main Menu`n 8: Exit`n`nPlease make a selection"
+        Write-Host "================ User Menu:" $global:adUser.Name "================"
+        Write-Host " 1: Enter a new username"
+        Write-Host " 2: Reset the password"
+        Write-Host " 3: Unlock the account"
+        Write-Host " 4: Move to short term debarment"
+        Write-Host " 5: Move to long term debarment"
+        Write-Host " 6: Move to permanent debarment"
+        Write-Host " M: Return to the main menu"
+        Write-Host " Q: Quit"
+        $selection = Read-Host "Please make a selection"
         cls
-        if ($menu -eq '1') { Get-User }
-        if ($menu -eq '2') { UserReset }
-        if ($menu -eq '3') { UserUnlock }
-        if ($menu -eq '4') {
-            $global:adGroup = "SG_PIV_Withdrawal_Short"
-            UserGroup
+        switch ($selection){
+            '1' { Get-User }
+            '2' { UserReset }
+            '3' { UserUnlock }
+            '4' {
+                $global:adGroup = "SG_PIV_Withdrawal_Short"
+                UserGroup
+            }
+            '5' {
+                $global:adGroup = "SG_PIV_Withdrawal_Long"
+                UserGroup
+            }
+            '6' {
+                $global:adGroup = "SG_PIV_Withdrawal_Permanent"
+                UserGroup
+            }
+            'q' {
+                Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
+                exit
+            }
         }
-        if ($menu -eq '5') {
-            $global:adGroup = "SG_PIV_Withdrawal_Long"
-            UserGroup
-        }
-        if ($menu -eq '6') {
-            $global:adGroup = "SG_PIV_Withdrawal_Permanent"
-            UserGroup
-        }
-        if ($menu -eq 'q') {
-            Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
-            exit
-        }
-        # Catch exceptions for invalid menu selections
-        if ($menu -notin (1,2,3,4,5,6,7)) {
+        if ($selection -notin (1,2,3,4,5,6,'m','q')) {
             Write-Error "Invalid selection." -Category InvalidData
             pause
         }
-    } While ($menu -ne '7')
+    } until ($selection -eq 'm')
 }
 
 function UserReset {
