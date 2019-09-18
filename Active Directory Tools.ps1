@@ -1,33 +1,44 @@
-# Comments #####################################################################
-# Application Name: Active Directory Tools
-# Author: Kevin Wells
-# Version: 1.2
-# Created: September 13, 2019
-#
-# Notes:
-# Must be run as administrator
-# 
-# Prerequisites:
-# The polling engine must have the features below installed.
-#  +- Remote Server Administration Tools
-# |-+ Role Administration Tools
-# |-+ AD DS and AD LDS Tools
-# |-+ Active Directory module for Windows PowerShell.
-
+<#
+.NAME
+    Active Directory Tools
+.SYNOPSIS
+    Provide PoSH command line interface for everyday AD tasks
+.REQUIREMENTS
+    Run as administrator
+    The polling engine must have the features below installed.
+     +- Remote Server Administration Tools
+    |-+ Role Administration Tools
+    |-+ AD DS and AD LDS Tools
+    |-+ Active Directory module for Windows PowerShell.
+.NOTES
+    Kevin Wells
+    github.com/kawells
+    
+    1.0 | 09/13/2019 | Kevin Wells
+        Initial Version
+    1.1 | 09/16/2019 | Kevin Wells
+        Added logging to text file
+    1.2 | 09/18/2019 | Kevin Wells
+        Reworked menus
+        Renamed vars/functions for PoSH best practices
+        Added computer menu
+        Added Bitlocker key lookup
+        Added LAPS lookup
+        Changed header format
+#>
 Import-Module activedirectory
-
-# Declare global vars
+## Declare global vars
 $global:adUser = $null #contains username
 $global:adComp = $null #comtains working computer name
 $global:adLocked = $null #status of account lock
 $global:adGroup = $null #contains group name that user will be added to in user-group function
 $logFile = "C:\adtlog.txt" #location and file name of log file
-
-# Define all functions
+## Define all functions
+# Displays the timestamp for logging
 function Get-TimeStamp {
     return "[{0:MM/dd/yy} {0:HH:mm:ss}]" -f (Get-Date)
 }
-
+# Displays the main menu
 function MainMenu {
     Write-Output "`n`n$(Get-TimeStamp) Session started" | Out-file $logFile -append  
     do {
@@ -55,7 +66,7 @@ function MainMenu {
     } until ($selection -eq 'q')
     Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
 }
-
+# Gets and validates the username
 function Get-User {
     do { 
             cls
@@ -90,7 +101,7 @@ function Get-User {
                     Write-Host " Status: Unable to determine lock status"
                     Write-Output "$(Get-TimeStamp) Unable to determine account lock status" | Out-file $logFile -append 
                 }
-                $conf = Read-Host "`nIs this the correct username? (y or n)"
+                $conf = Read-Host "`nIs this correct? (y or n)"
             }
             else {
                 Read-Host -Prompt "`n Account not found.`n`nPress Enter to try again"
@@ -99,7 +110,7 @@ function Get-User {
             cls
     } While ($conf -ne 'y')
 }
-
+# Gets and validates the computer name
 function Get-Comp {
     do { 
             cls
@@ -117,7 +128,7 @@ function Get-Comp {
                 $global:adComp = Get-ADComputer $userInput
                 "`n Computer found.`n Computer name: " + $global:adComp.Name
                 Write-Output "$(Get-TimeStamp) Computer found in AD" | Out-file $logFile -append 
-                $conf = Read-Host "`nIs this the correct computer name? (y or n)"
+                $conf = Read-Host "`nIs this correct? (y or n)"
             }
             else {
                 Read-Host -Prompt "`n Computer not found.`n`nPress Enter to try again"
@@ -126,7 +137,7 @@ function Get-Comp {
             cls
     } While ($conf -ne 'y')
 }
-
+# Gets the bitlocker key of computer
 function Get-Bl {
     "Computer name: " + $global:adComp.Name
     Write-Output "$(Get-TimeStamp) Entered Bitlocker menu" | Out-file $logFile -append
@@ -146,7 +157,7 @@ function Get-Bl {
     } else { "`n Bitlocker key not copied to clipboard.`n" }
     pause
 }
-
+# Gets the LAPS of computer
 function Get-Laps {
     "Computer name: " + $global:adComp.Name
     Write-Output "$(Get-TimeStamp) Entered LAPS menu" | Out-file $logFile -append
@@ -165,7 +176,7 @@ function Get-Laps {
     } else { "`n Password not copied to clipboard.`n" }
     pause
 }
-
+# Displays the computer menu
 function CompMenu {
     do {
         cls
@@ -173,7 +184,7 @@ function CompMenu {
         Write-Host "================ Computer Menu:" $global:adComp.Name "================"
         Write-Host " 1: Enter a new computer name"
         Write-Host " 2: Display the Bitlocker recovery key"
-        Write-Host " 3: Display local administrator password (LAPS)"
+        Write-Host " 3: Display the local administrator password (LAPS)"
         Write-Host " M: Return to the main menu"
         Write-Host " Q: Quit"
         $selection = Read-Host "Please make a selection"
@@ -199,7 +210,7 @@ function CompMenu {
         }
     } until ($selection -eq 'm')
 }
-
+# Displays the user menu
 function UserMenu {  
     do {
         cls
@@ -242,7 +253,7 @@ function UserMenu {
         }
     } until ($selection -eq 'm')
 }
-
+# Resets the user account
 function UserReset {
     "Username: " + $global:adUser.Name
     # Prompt for new password
@@ -256,7 +267,7 @@ function UserReset {
     " " + $global:adUser + "'s password has been reset.`n"
     pause
 }
-
+# Unlocks the user account
 function UserUnlock {
     Write-Output "$(Get-TimeStamp) Entered unlock menu" | Out-file $logFile -append
     
@@ -284,7 +295,7 @@ function UserUnlock {
     }  
     pause
 }
-
+# Displays group memberships, adds user to group defined in $global:adGroup
 function UserGroup {
     Write-Output "$(Get-TimeStamp) Entered add to group menu for $global:adGroup" | Out-file $logFile -append
     "Username: " + $global:adUser.Name
@@ -317,7 +328,5 @@ function UserGroup {
     }    
     pause
 }
-
-
 # Call function to display main menu
 MainMenu
