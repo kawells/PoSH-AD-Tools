@@ -3,17 +3,16 @@
     Active Directory Tools
 .SYNOPSIS
     Provide PoSH command line interface for everyday AD tasks
-.REQUIREMENTS
-    Run as administrator
+.NOTES
+    Author: Kevin Wells
+
+    PowerShell ISE must be run as administrator
     The polling engine must have the features below installed.
      +- Remote Server Administration Tools
     |-+ Role Administration Tools
     |-+ AD DS and AD LDS Tools
-    |-+ Active Directory module for Windows PowerShell.
-.NOTES
-    Kevin Wells
-    github.com/kawells
-    
+    |-+ Active Directory module for Windows PowerShell
+
     1.0 | 09/13/2019 | Kevin Wells
         Initial Version
     1.1 | 09/16/2019 | Kevin Wells
@@ -25,11 +24,13 @@
         Added Bitlocker key lookup
         Added LAPS lookup
         Changed header format
+.LINK
+    github.com/kawells
 #>
 Import-Module activedirectory
 ## Declare global vars
 $global:adUser = $null #contains username
-$global:adComp = $null #comtains working computer name
+$global:adComp = $null #contains working computer name
 $global:adLocked = $null #status of account lock
 $global:adGroup = $null #contains group name that user will be added to in user-group function
 $logFile = "C:\adtlog.txt" #location and file name of log file
@@ -70,24 +71,20 @@ function MainMenu {
 function Get-User {
     do { 
             cls
-            # Username prompt
             $userInput = Read-Host -Prompt "Enter the username"
-            $global:adUser = $userInput
             Write-Output "$(Get-TimeStamp) User entered username: $userInput" | Out-file $logFile -append
-
             # Verify account exists
             $accountExist = [bool] (Get-ADUser -Filter { SamAccountName -eq $userInput })
-            
             # Check to see if account is locked
             $accountLocked = [bool] (Get-ADUser $userInput -Properties * | Select-Object LockedOut)
             $global:adLocked = $accountLocked
-            
             # Display results
             cls
             "Active Directory search results for " + $userInput + ":"
             if ($accountExist -eq "true"){
-                $global:adUser = Get-ADUser $userInput
-                "`n Account found.`n Username: " + $userInput
+                $global:adUser = Get-ADUser $userInput -properties PasswordLastSet
+                Write-Host "`n Account found.`n`n Username:" $global:adUser.Name
+                Write-Host " Password last set on" $global:adUser.PasswordLastSet
                 Write-Output "$(Get-TimeStamp) Account found in AD" | Out-file $logFile -append 
                 if ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "True" ){
                     Write-Host " Status: Locked"
@@ -139,16 +136,12 @@ function Get-Comp {
 }
 # Gets the bitlocker key of computer
 function Get-Bl {
-    "Computer name: " + $global:adComp.Name
-    Write-Output "$(Get-TimeStamp) Entered Bitlocker menu" | Out-file $logFile -append
-
-    # Get and display Bitlocker key(s)
     $bitlocker = (Get-ADObject -Filter {objectclass -eq 'msFVE-RecoveryInformation'} -SearchBase $global:adComp.DistinguishedName -Properties 'msFVE-RecoveryPassword').'msFVE-RecoveryPassword'
+    Write-Output "$(Get-TimeStamp) Entered Bitlocker menu" | Out-file $logFile -append    
+    Write-Output "$(Get-TimeStamp) Bitlocker keys: $bitlocker" | Out-file $logFile -append
+    "Computer name: " + $global:adComp.Name
     "`n Bitlocker recovery key(s):"
     $bitlocker
-    Write-Output "$(Get-TimeStamp) Bitlocker keys: $bitlocker" | Out-file $logFile -append
-    
-    # Copy to clipboard prompt
     $conf = Read-Host "`n Copy Bitlocker key to clipboard? (y or n)"
     if ($conf -eq 'y') {
         Set-Clipboard -Value $bitlocker
@@ -159,16 +152,12 @@ function Get-Bl {
 }
 # Gets the LAPS of computer
 function Get-Laps {
-    "Computer name: " + $global:adComp.Name
-    Write-Output "$(Get-TimeStamp) Entered LAPS menu" | Out-file $logFile -append
-
-    # Display LAPS
     $laPass = Get-ADComputer $global:adComp -Properties * | select -ExpandProperty ms-Mcs-AdmPwd
-    "`n LAPS: $laPass"
+    Write-Output "$(Get-TimeStamp) Entered LAPS menu" | Out-file $logFile -append
     Write-Output "$(Get-TimeStamp) LAPS: $laPass" | Out-file $logFile -append
-
-    # Copy to clipboard prompt
-    $conf = Read-Host "`n Copy password to clipboard? (y or n)"
+    "Computer name: " + $global:adComp.Name
+    "`n LAPS: $laPass"
+    $conf = Read-Host "`n Copy LAPS to clipboard? (y or n)"
     if ($conf -eq 'y') {
         Get-ADComputer $global:adComp -Properties * | select -ExpandProperty ms-Mcs-AdmPwd | Set-Clipboard
         "`n Password copied to clipboard.`n"
@@ -255,16 +244,27 @@ function UserMenu {
 }
 # Resets the user account
 function UserReset {
-    "Username: " + $global:adUser.Name
-    # Prompt for new password
+    $pwdDate = $global:adUser.passwordlastset.ToShortDateString()
+    Write-Host "Username:" $global:adUser.Name
+    Write-Host "Password last set on" $pwdDate
     $newpass = Read-Host -Prompt " Enter the new password" -AsSecureString
-
-    # Set new password
+    "`n Resetting password for " + $global:adUser.Name + "..."
     Set-ADAccountPassword -Identity $global:adUser -NewPassword $newpass -Reset
-    "`n Resetting password for " + $global:adUser + "..."
+    $global:adUser = Get-ADUser -filter { SamAccountName -eq $global:adUser } -properties passwordlastset
+    $pwdDate = $global:adUser.passwordlastset.ToShortDateString()
+    $dateNow = Get-Date
+    $dateNow = $dateNow.ToShortDateString()
+    if ($pwdDate -eq $dateNow) {
+        " " + $global:adUser.Name + "'s password has been reset.`n"
+        Write-Output "$(Get-TimeStamp) Password was reset" | Out-file $logFile -append
+    }
+    else {
+        Write-Error $global:adUser.Name + "'s password has not been reset. Please try again.`n" -Category InvalidOperation
+        Write-Output "$(Get-TimeStamp) ERROR: Password was not reset" | Out-file $logFile -append
+    }
+
     # Same thing but require change password at next logon
     #Set-ADAccountPassword $global:adUser -NewPassword $newpass -Reset -PassThru | Set-ADuser -ChangePasswordAtLogon $True
-    " " + $global:adUser + "'s password has been reset.`n"
     pause
 }
 # Unlocks the user account
