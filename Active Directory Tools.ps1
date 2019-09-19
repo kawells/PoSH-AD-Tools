@@ -24,6 +24,10 @@
         Added Bitlocker key lookup
         Added LAPS lookup
         Changed header format
+    1.3 | 09/19/2019 | Kevin Wells
+        Reworked menus
+        Changed naming convention of functions to match verb usage
+        Branched existing functions into separate reusable functions
 .LINK
     github.com/kawells
 #>
@@ -31,100 +35,101 @@ Import-Module activedirectory
 $logDir = "C:\Users\" + $env:UserName + "\Documents\"
 $logFile = $logDir + "adtlog.txt" #location and file name of log file
 ## Declare global vars
-$global:adUser = $null #contains username
+$global:adUser = $null #contains working username
 $global:adComp = $null #contains working computer name
-$global:adLocked = $null #contains status of account lock
 $global:adGroup = $null #contains group name that user will be added to in UserGroup function
 ## Define all functions
 # Displays the timestamp for logging
 function Get-TimeStamp {
     return "[{0:MM/dd/yy} {0:HH:mm:ss}]" -f (Get-Date)
 }
-# Displays the main menu
-function MainMenu {
-    Write-Output "`n`n$(Get-TimeStamp) Session started" | Out-file $logFile -append  
-    do {
-        cls
-        Write-Host "================ Main Menu ================"
-        Write-Host " 1: User management menu"
-        Write-Host " 2: Computer management menu"
-        Write-Host " Q: Quit"
-        $selection = Read-Host "Please make a selection"
-        cls
-        switch ($selection){
-            '1' {
-                if ($global:adUser -eq $null) { Get-User }
-                UserMenu
-            }
-            '2' {
-                if ($global:adComp -eq $null) { Get-Comp }
-                CompMenu
-            }
-        }
-        if ($selection -notin (1,2,'q')) {
-            Write-Error "Invalid selection." -Category InvalidData
-            pause
-        }
-    } until ($selection -eq 'q')
-    Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
+# Gets the username
+function Show-UmHeader {
+    cls
+    Write-Host "================ User Menu:" $global:adUser.Name "================"
 }
-# Gets and validates the username
+function Show-CmHeader {
+    cls
+    Write-Host "================ Computer Menu:" $global:adComp.Name "================"   
+}
 function Get-User {
     do { 
-            cls
-            $userInput = Read-Host -Prompt "Enter the username"
-            Write-Output "$(Get-TimeStamp) User entered username: $userInput" | Out-file $logFile -append
-            # Verify account exists
-            $accountExist = [bool] (Get-ADUser -Filter { SamAccountName -eq $userInput })
-            # Check to see if account is locked
-            $accountLocked = [bool] (Get-ADUser $userInput -Properties * | Select-Object LockedOut)
-            $global:adLocked = $accountLocked
-            # Display results
-            cls
-            "Active Directory search results for " + $userInput + ":"
-            if ($accountExist -eq "true"){
-                $global:adUser = Get-ADUser $userInput -properties PasswordLastSet
-                Write-Host "`n Account found.`n`n Username:" $global:adUser.Name
-                Write-Host " Password last set on" $global:adUser.PasswordLastSet
-                Write-Output "$(Get-TimeStamp) Account found in AD" | Out-file $logFile -append               
-                if ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "True" ){
-                    Write-Host " Status: Locked"
-                    Write-Output "$(Get-TimeStamp) Account status: locked" | Out-file $logFile -append 
-                }
-                elseif ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "False"){
-                    Write-Host " Status: Unlocked"
-                    Write-Output "$(Get-TimeStamp) Account status: unlocked" | Out-file $logFile -append
-                }
-                else {
-                    Write-Host " Status: Unable to determine lock status"
-                    Write-Output "$(Get-TimeStamp) Unable to determine account lock status" | Out-file $logFile -append 
-                }
-                $conf = Read-Host "`nIs this correct? (y or n)"
-            }
-            else {
+        cls
+        Write-Host "================ User Menu ================"
+        $userInput = Read-Host -Prompt " Enter the username"
+        Write-Output "$(Get-TimeStamp) User entered username: $userInput" | Out-file $logFile -append
+        $global:adUser = $userInput
+        $userFound = Find-User
+        if ($userFound -match "True") {
+            $global:adUser = Get-ADUser $userInput -properties PasswordLastSet
+            Write-Output "$(Get-TimeStamp) Account found in AD" | Out-file $logFile -append
+            Show-UmHeader
+            Write-Host " Active Directory Results`n"
+            Write-Host " Username:     "$global:adUser.Name
+            $userLocked = Show-UserLock
+            $userPassSet = Show-UserPassSet
+            $conf = Read-Host "`nIs this correct? (y or n)"
+        }
+        else {
+                cls
+                Write-Host "================ User Menu ================"
                 Read-Host -Prompt "`n Account not found.`n`nPress Enter to try again"
-                Write-Output "$(Get-TimeStamp) Account not found" | Out-file $logFile -append 
-            }
-            cls
+                Write-Output "$(Get-TimeStamp) Account not found" | Out-file $logFile -append
+        }
     } While ($conf -ne 'y')
+    cls
+    return $global:adUser
+}
+# Verify user in AD
+function Find-User {
+    $accountExist = [bool] (Get-ADUser -Filter "SamAccountName -eq '$global:adUser'")
+    return $accountExist
+}
+# Verify comp in AD
+function Find-Comp {
+    $compExist = [bool] (Get-ADComputer -Filter { Name -eq $userInput })
+    return $compExist
+}
+# Display and return user account lock status
+function Show-UserLock {
+    $userLocked = [bool] (Get-ADUser -Filter "SamAccountName -eq '$global:adUser'" -Properties * | Select-Object LockedOut)
+    if ( $userLocked -match "True" ){
+        Write-Host " Status:       Locked"
+        Write-Output "$(Get-TimeStamp) Account status: locked" | Out-file $logFile -append 
+    }
+    elseif ( $userLocked -match "False" ){
+        Write-Host " Status:       Unlocked"
+        Write-Output "$(Get-TimeStamp) Account status: unlocked" | Out-file $logFile -append
+    }
+    else {
+        Write-Host " Status:       Unable to determine lock status"
+        Write-Output "$(Get-TimeStamp) Unable to determine account lock status" | Out-file $logFile -append 
+    }
+    return $userLocked
+}
+# Display and return date of user account password last reset
+function Show-UserPassSet {
+    $passSet = $global:adUser.PasswordLastSet.ToShortDateString()
+    Write-Host " Password Set:" $passSet
+    return $passSet
 }
 # Gets and validates the computer name
 function Get-Comp {
     do { 
             cls
-            # Computer name prompt
+            Write-Host "================ Computer Menu ================"
             $userInput = Read-Host -Prompt "Enter the computer name"
             Write-Output "$(Get-TimeStamp) User entered computer name: $userInput" | Out-file $logFile -append
-
-            # Verify computer exists
-            $accountExist = [bool] (Get-ADComputer -Filter { Name -eq $userInput })
-            
+            $global:adComp = $userInput
+            $compExist = Find-Comp
             # Display results
             cls
-            "Active Directory search results for " + $userInput + ":"
-            if ($accountExist -eq "true"){
+            if ($compExist -match "True"){
                 $global:adComp = Get-ADComputer $userInput
-                "`n Computer found.`n Computer name: " + $global:adComp.Name
+                cls
+                Write-Host "================ Computer Menu:" $global:adComp.Name "================"
+                Write-Host " Active Directory Results`n"
+                "`n Computer name: " + $userInput
                 Write-Output "$(Get-TimeStamp) Computer found in AD" | Out-file $logFile -append 
                 $conf = Read-Host "`nIs this correct? (y or n)"
             }
@@ -134,16 +139,16 @@ function Get-Comp {
             }
             cls
     } While ($conf -ne 'y')
+
 }
-# Gets the bitlocker key of computer
-function Get-Bl {
+# Shows the bitlocker key of computer
+function Show-Bl {
     $bitlocker = (Get-ADObject -Filter {objectclass -eq 'msFVE-RecoveryInformation'} -SearchBase $global:adComp.DistinguishedName -Properties 'msFVE-RecoveryPassword').'msFVE-RecoveryPassword'
-    Write-Output "$(Get-TimeStamp) Entered Bitlocker menu" | Out-file $logFile -append    
     Write-Output "$(Get-TimeStamp) Bitlocker keys: $bitlocker" | Out-file $logFile -append
-    "Computer name: " + $global:adComp.Name
-    "`n Bitlocker recovery key(s):"
+    Write-Host "================ Computer Menu:" $global:adComp.Name "================"
+    " Bitlocker recovery key(s):`n "
     $bitlocker
-    $conf = Read-Host "`n Copy Bitlocker key to clipboard? (y or n)"
+    $conf = Read-Host "`nCopy Bitlocker key to clipboard? (y or n)"
     if ($conf -eq 'y') {
         Set-Clipboard -Value $bitlocker
         "`n Bitlocker key copied to clipboard.`n"
@@ -151,12 +156,11 @@ function Get-Bl {
     } else { "`n Bitlocker key not copied to clipboard.`n" }
     pause
 }
-# Gets the LAPS of computer
-function Get-Laps {
+# Shows the LAPS of computer
+function Show-Laps {
     $laPass = Get-ADComputer $global:adComp -Properties * | select -ExpandProperty ms-Mcs-AdmPwd
-    Write-Output "$(Get-TimeStamp) Entered LAPS menu" | Out-file $logFile -append
     Write-Output "$(Get-TimeStamp) LAPS: $laPass" | Out-file $logFile -append
-    "Computer name: " + $global:adComp.Name
+    Write-Host "================ Computer Menu:" $global:adComp.Name "================"
     "`n LAPS: $laPass"
     $conf = Read-Host "`n Copy LAPS to clipboard? (y or n)"
     if ($conf -eq 'y') {
@@ -167,7 +171,7 @@ function Get-Laps {
     pause
 }
 # Displays the computer menu
-function CompMenu {
+function Show-CompMenu {
     do {
         cls
         Write-Output "$(Get-TimeStamp) Entered computer menu" | Out-file $logFile -append
@@ -184,10 +188,10 @@ function CompMenu {
                 Get-Comp
             }
             '2' {
-                Get-Bl
+                Show-Bl
             }
             '3' {
-                Get-Laps
+                Show-Laps
             }
             'q' {
                 Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
@@ -201,11 +205,9 @@ function CompMenu {
     } until ($selection -eq 'm')
 }
 # Displays the user menu
-function UserMenu {  
+function Show-UserMenu {  
     do {
-        cls
-        Write-Output "$(Get-TimeStamp) Entered user menu" | Out-file $logFile -append
-        Write-Host "================ User Menu:" $global:adUser.Name "================"
+        Show-UmHeader
         Write-Host " 1: Enter a new username"
         Write-Host " 2: Reset the password"
         Write-Host " 3: Unlock the account"
@@ -245,11 +247,11 @@ function UserMenu {
 }
 # Resets the user account
 function UserReset {
+    Show-UmHeader
     $pwdDate = $global:adUser.passwordlastset.ToShortDateString()
-    Write-Host "Username:" $global:adUser.Name
-    Write-Host "Password last set on" $pwdDate
+    Write-Host " Username:" $global:adUser.Name
+    Write-Host " Password last set on" $pwdDate
     $newpass = Read-Host -Prompt " Enter the new password" -AsSecureString
-    "`n Resetting password for " + $global:adUser.Name + "..."
     Set-ADAccountPassword -Identity $global:adUser -NewPassword $newpass -Reset
     $global:adUser = Get-ADUser -filter { SamAccountName -eq $global:adUser } -properties passwordlastset
     $pwdDate = $global:adUser.passwordlastset.ToShortDateString()
@@ -270,33 +272,31 @@ function UserReset {
 }
 # Unlocks the user account
 function UserUnlock {
-    Write-Output "$(Get-TimeStamp) Entered unlock menu" | Out-file $logFile -append
-    
-    "Username: " + $global:adUser.Name
-
-    if ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "True" )
+    Show-UmHeader 
+    $lockStatus = Show-UserLock
+    if ($lockStatus -match "True")
     {
-        "`n Status: Locked`n Unlocking account for " + $global:adUser + "...`n"
+        "`n Unlocking account for " + $global:adUser + "...`n"
         Unlock-ADAccount -Identity $global:adUser
-        if ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "False")
+        $lockStatus = Show-UserLock
+        if ($lockStatus -match "False")
         {
-            " Status: Account successfully unlocked.`n"
+            " Account successfully unlocked.`n"
             Write-Output "$(Get-TimeStamp) Account unlocked" | Out-file $logFile -append 
         }
     }
-    elseif ( (Get-ADUser $global:adUser -Properties * | Select-Object LockedOut) -match "False")
-    {
-        "`n Status: Account is already unlocked. No action taken.`n"
-        Write-Output "$(Get-TimeStamp) Account already unlocked" | Out-file $logFile -append
-    }
-    else
-    {
-        Write-Error "Unable to determine lock status. Please try again.`n" -Category InvalidOperation
-        Write-Output "$(Get-TimeStamp) ERROR: Unable to determine lock status" | Out-file $logFile -append
-    }  
+    else { "No action taken.`n" }
     pause
 }
-# Displays group memberships, adds user to group defined in $global:adGroup
+# Prompts for group to add user to
+function Get-UserGroup {
+    
+}
+# Displays group memberships
+function Show-UserGroup {
+    
+}
+# Displays group memberships
 function UserGroup {
     Write-Output "$(Get-TimeStamp) Entered add to group menu for $global:adGroup" | Out-file $logFile -append
     "Username: " + $global:adUser.Name
@@ -328,5 +328,31 @@ function UserGroup {
     }    
     pause
 }
-# Call function to display main menu
-MainMenu
+
+
+# Display Main Menu
+Write-Output "`n`n$(Get-TimeStamp) Session started" | Out-file $logFile -append  
+do {
+    cls
+    Write-Host "================ Main Menu ================"
+    Write-Host " 1: User management menu"
+    Write-Host " 2: Computer management menu"
+    Write-Host " Q: Quit"
+    $selection = Read-Host "Please make a selection"
+    cls
+    switch ($selection){
+        '1' {
+            if ($global:adUser -eq $null) { Get-User }
+            Show-UserMenu
+        }
+        '2' {
+            if ($global:adComp -eq $null) { Get-Comp }
+            Show-CompMenu
+        }
+    }
+    if ($selection -notin (1,2,'q')) {
+        Write-Error "Invalid selection." -Category InvalidData
+        pause
+    }
+} until ($selection -eq 'q')
+Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
