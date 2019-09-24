@@ -153,6 +153,7 @@ function Get-User {
             $userLocked = Show-UserLock
             $userPassSet = Show-UserPassSet
             $conf = Read-Host "`nIs this correct? (y or n)"
+
         }
         else {
             $global:adUser = $null
@@ -228,9 +229,21 @@ function Get-Comp {
                 Write-Output "$(Get-TimeStamp) Computer found in AD" | Out-file $logFile -append
             }
             else {
+            $global:adComp = $null
                 Show-CmHeader
-                Read-Host -Prompt "`n Computer not found.`n`nPress Enter to try again"
-                Write-Output "$(Get-TimeStamp) Computer not found" | Out-file $logFile -append 
+                Write-Output "$(Get-TimeStamp) Computer not found" | Out-file $logFile -append
+                Write-Host " Active Directory Results`n"
+                Write-Host " Computer:" $userInput "was not found.`n"
+                Write-Host " R: Try again"
+                Write-Host " M: Return to the main menu"
+                Write-Host " Q: Quit"
+                $conf = Read-Host -Prompt "Please make a selection"
+                switch ($conf){
+                    'm' {
+                    return $global:adUser
+                    }
+                    'q' { exit }
+                }
             }
             cls
     } While ($conf -ne 'y')
