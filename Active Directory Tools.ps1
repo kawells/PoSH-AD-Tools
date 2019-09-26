@@ -64,7 +64,7 @@ $pshost = get-host
 $pswindow = $pshost.ui.rawui
 $newsize = $pswindow.buffersize
 $newsize.height = 3000
-$newsize.width = 150
+$newsize.width = 100
 $pswindow.buffersize = $newsize
 $newsize = $pswindow.windowsize
 $newsize.height = 40
@@ -92,13 +92,13 @@ function Get-TimeStamp {
 function Show-UmHeader {
     cls
     if ($global:adUser -ne $null ) { Write-Host $global:wing "User Menu:" $global:adUser.Name "on"$global:adDc.Name $global:wing }
-    else { Write-Host $global:wing "User Menu" $global:wing }
+    else { Write-Host $global:wing "User Menu:"$global:adDc.Name $global:wing }
 }
 # Show header for computer menu
 function Show-CmHeader {
     cls
     if ($global:adComp -ne $null ) { Write-Host $global:wing "Computer Menu:" $global:adComp.Name "on"$global:adDc.Name $global:wing }
-    else { Write-Host $global:wing "Computer Menu" $global:wing }
+    else { Write-Host $global:wing "Computer Menu:"$global:adDc.Name $global:wing }
 }
 # Show header for group membership menu
 function Show-GmHeader {
@@ -208,7 +208,7 @@ function Get-User {
                         pause
                     }
                 }
-            } while ($conf -eq 'n')
+            } while ($conf -ne 'n')
         }
         else {
             $global:adUser = $null
@@ -293,7 +293,7 @@ function Get-Comp {
                         pause
                     }
                 }
-            } while ($conf -eq 'n')
+            } while ($conf -ne 'n')
         }
         else {
             $global:adComp = $null
