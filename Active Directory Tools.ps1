@@ -34,6 +34,9 @@
             or computer search menu
         Added self-elevation to prevent users from trying to run as non-admin account
         Added domain controller menu and selection
+    1.5 | 09/25/2019 | Kevin Wells
+        Added window resize and window color change
+
 .LINK
     github.com/kawells
 #>
@@ -52,9 +55,25 @@ catch {
     pause
     exit
 }
+#resize and color the display
+$pshost = get-host
+$pswindow = $pshost.ui.rawui
+$newsize = $pswindow.buffersize
+$newsize.height = 3000
+$newsize.width = 150
+$pswindow.buffersize = $newsize
+$newsize = $pswindow.windowsize
+$newsize.height = 40
+$newsize.width = 100
+$pswindow.windowsize = $newsize
+$pswindow.windowtitle = "AD Tools"
+$pswindow.foregroundcolor = "White"
+$pswindow.backgroundcolor = "Black"
+cls
+# Set location and file name of log file
 $logDir = "C:\Users\" + $env:UserName + "\Documents\"
-$logFile = $logDir + "adtlog.txt" #location and file name of log file
-## Declare global vars
+$logFile = $logDir + "adtlog.txt" 
+# Declare global vars
 $global:adDc = Get-ADDomainController #contains working DC
 $global:adUser = $null #contains working username
 $global:adComp = $null #contains working computer name
@@ -125,8 +144,6 @@ function Get-Dc {
                 'q' { exit }
             }
         }
-
-
     } While ($conf -ne 'y')
     cls
     return $global:adDc       
@@ -262,6 +279,7 @@ function Show-Bl {
         "`n Bitlocker key copied to clipboard.`n"
         Write-Output "$(Get-TimeStamp) Bitlocker key copied to clipboard" | Out-file $logFile -append  
     } else { "`n Bitlocker key not copied to clipboard.`n" }
+    $bitlocker = $null
     pause
 }
 # Show the LAPS of computer
@@ -276,6 +294,7 @@ function Show-Laps {
         "`n Password copied to clipboard.`n"
         Write-Output "$(Get-TimeStamp) Password copied to clipboard" | Out-file $logFile -append    
     } else { "`n Password not copied to clipboard.`n" }
+    $laPass = $null
     pause
 }
 # Displays the computer menu
