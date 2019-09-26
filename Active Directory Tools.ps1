@@ -6,12 +6,12 @@
 .NOTES
     Author: Kevin Wells
 
-    PowerShell ISE must be run as administrator
+    Once elevated, script must be run as AD user with admin rights.
     The polling engine must have the features below installed.
-     +- Remote Server Administration Tools
-    |-+ Role Administration Tools
-    |-+ AD DS and AD LDS Tools
-    |-+ Active Directory module for Windows PowerShell
+        Remote Server Administration Tools
+        Role Administration Tools
+        AD DS and AD LDS Tools
+        Active Directory module for Windows PowerShell
 
     1.0 | 09/13/2019 | Kevin Wells
         Initial Version
