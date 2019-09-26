@@ -36,10 +36,14 @@
         Added domain controller menu and selection
     1.5 | 09/25/2019 | Kevin Wells
         Added window resize and window color change
+    1.6 | 09/26/2019 | Kevin Wells
+        Added even more input error handling
+        Renamed some functions to use approved PS verbs
 
 .LINK
     github.com/kawells
 #>
+$WarningPreference = 'Continue' # Set warnings to display
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
  if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
@@ -78,6 +82,7 @@ $global:adDc = Get-ADDomainController #contains working DC
 $global:adUser = $null #contains working username
 $global:adComp = $null #contains working computer name
 $global:adGroup = $null #contains group name that user will be added to in UserGroup function
+$global:wing = "================"
 ## Define all functions
 # Display the timestamp for logging
 function Get-TimeStamp {
@@ -86,66 +91,90 @@ function Get-TimeStamp {
 # Show header for user menu
 function Show-UmHeader {
     cls
-    if ($global:adUser -ne $null ) { Write-Host "================ User Menu:" $global:adUser.Name "on"$global:adDc.Name "================" }
-    else { Write-Host "================ User Menu ================" }
+    if ($global:adUser -ne $null ) { Write-Host $global:wing "User Menu:" $global:adUser.Name "on"$global:adDc.Name $global:wing }
+    else { Write-Host $global:wing "User Menu" $global:wing }
 }
 # Show header for computer menu
 function Show-CmHeader {
     cls
-    if ($global:adComp -ne $null ) { Write-Host "================ Computer Menu:" $global:adComp.Name "on"$global:adDc.Name  "================" }
-    else { Write-Host "================ Computer Menu ================" }
+    if ($global:adComp -ne $null ) { Write-Host $global:wing "Computer Menu:" $global:adComp.Name "on"$global:adDc.Name $global:wing }
+    else { Write-Host $global:wing "Computer Menu" $global:wing }
 }
 # Show header for group membership menu
 function Show-GmHeader {
     cls
-    Write-Host "================ User Group Menu:" $global:adUser.Name "on"$global:adDc.Name "================"   
+    Write-Host $global:wing "User Group Menu:" $global:adUser.Name "on"$global:adDc.Name $global:wing   
 }
 # Show header for main menu
 function Show-MmHeader {
     cls
-    Write-Host "================ Main Menu:"$global:adDc.Name "================"
+    Write-Host $global:wing "Main Menu:"$global:adDc.Name $global:wing
 }
 # Show header for DC menu
 function Show-DmHeader {
     cls
-    Write-Host "================ Domain Controller Menu:"$global:adDc.Name "================"
+    Write-Host $global:wing "Domain Controller Menu:"$global:adDc.Name $global:wing
 }
 # Get DC from user
 function Get-Dc {
     do {
         Show-DmHeader
         Write-Host " You are currently using" $global:adDc.Name
-        $userInput = Read-Host -Prompt " Enter the domain controller to use"
-        $global:adDc = $userInput
+        $conf = Read-Host "`nAre you sure you want to set a domain controller? (y or n)"
+        switch ($conf) {
+            'n' { return }
+            'y' { }
+            default {
+                Write-Warning "Invalid selection."
+                pause
+            }
+        }   
+    } while ($conf -ne 'y')
+    do {
+        Show-DmHeader
+        $userInput = Read-Host -Prompt "Enter the domain controller to use"
         $dcFound = Find-Dc
         if ($dcFound -match "True") {
-            $global:adDc = Get-ADDomainController -Identity $userInput
             Write-Output "$(Get-TimeStamp) DC found in AD" | Out-file $logFile -append
             Show-DmHeader
             Write-Host " Active Directory Results`n"
-            Write-Host " Domain controller: "$global:adDc.Name
+            Write-Host " Domain controller:"$userInput
             $conf = Read-Host "`nIs this correct? (y or n)"
-            if ($conf -ne 'y') { $global:adDc = Get-ADDomainController }
+            switch ($conf) {
+                'y' {
+                    $global:adDc = Get-ADDomainController -Identity $userInput
+                    return
+                }
+                'n' { $global:adDc = Get-ADDomainController }
+                default {
+                    Write-Warning "Invalid selection."
+                    pause
+                }
+            }
         }
         else {
             $global:adDc = Get-ADDomainController
             Write-Output "$(Get-TimeStamp) DC not found" | Out-file $logFile -append
-            Show-DmHeader
-            Write-Host " Active Directory Results`n"
-            Write-Host " Domain controller:" $userInput "was not found.`n"
-            Write-Host " R: Try again"
-            Write-Host " M: Return to the main menu"
-            Write-Host " Q: Quit"
-            $conf = Read-Host -Prompt "Please make a selection"
-            switch ($conf){
-                'm' {
-                return $global:adDc
+            do {
+                Show-DmHeader
+                Write-Host " Active Directory Results`n"
+                Write-Host " Domain controller:" $userInput "was not found.`n"
+                Write-Host " R: Try again"
+                Write-Host " M: Return to the main menu"
+                Write-Host " Q: Quit"
+                $conf = Read-Host -Prompt "Please make a selection"
+                switch ($conf){
+                    'r' { }
+                    'm' { return $global:adDc }
+                    'q' { exit }
+                    default { 
+                        Write-Warning "Invalid selection."
+                        pause
+                    }
                 }
-                'q' { exit }
-            }
+            } while ($conf -eq 'r')
         }
-    } While ($conf -ne 'y')
-    cls
+    } while ($conf -eq 'n')
     return $global:adDc       
 }
 # Verify DC in AD
@@ -164,33 +193,46 @@ function Get-User {
         if ($userFound -match "True") {
             $global:adUser = Get-ADUser $userInput -server $global:adDc -properties PasswordLastSet
             Write-Output "$(Get-TimeStamp) Account found in AD" | Out-file $logFile -append
-            Show-UmHeader
-            Write-Host " Active Directory Results`n"
-            Write-Host " Username:    "$global:adUser.Name
-            $userLocked = Show-UserLock
-            $userPassSet = Show-UserPassSet
-            $conf = Read-Host "`nIs this correct? (y or n)"
-
+            do {
+                Show-UmHeader
+                Write-Host " Active Directory Results`n"
+                Write-Host " Username:    "$global:adUser.Name
+                $userLocked = Show-UserLock
+                $userPassSet = Show-UserPassSet
+                $conf = Read-Host "`nIs this correct? (y or n)"
+                switch ($conf){
+                    'y' { return $global:adUser }
+                    'n' { }
+                    default {
+                        Write-Warning "Invalid selection."
+                        pause
+                    }
+                }
+            } while ($conf -eq 'n')
         }
         else {
             $global:adUser = $null
             Write-Output "$(Get-TimeStamp) Account not found" | Out-file $logFile -append
-            Show-UmHeader
-            Write-Host " Active Directory Results`n"
-            Write-Host " Username:" $userInput "was not found.`n"
-            Write-Host " R: Try again"
-            Write-Host " M: Return to the main menu"
-            Write-Host " Q: Quit"
-            $conf = Read-Host -Prompt "Please make a selection"
-            switch ($conf){
-                'm' {
-                return $global:adUser
+            do {
+                Show-UmHeader
+                Write-Host " Active Directory Results`n"
+                Write-Host " Username:" $userInput "was not found.`n"
+                Write-Host " R: Try again"
+                Write-Host " M: Return to the main menu"
+                Write-Host " Q: Quit"
+                $conf = Read-Host -Prompt "Please make a selection"
+                switch ($conf){
+                    'r' { }
+                    'm' { return $global:adUser }
+                    'q' { exit }
+                    default {
+                        Write-Warning "Invalid selection."
+                        pause
+                    }
                 }
-                'q' { exit }
-            }
+            } while ($conf -eq 'r')
         }
     } While ($conf -ne 'y')
-    cls
     return $global:adUser
 }
 # Verify user in AD
@@ -229,26 +271,35 @@ function Show-UserPassSet {
 # Get the computer name from user
 function Get-Comp {
     do { 
-            cls
-            Write-Host "================ Computer Menu ================"
-            $userInput = Read-Host -Prompt "Enter the computer name"
-            Write-Output "$(Get-TimeStamp) User entered computer name: $userInput" | Out-file $logFile -append
-            $global:adComp = $userInput
-            $compExist = Find-Comp
-            # Display results
-            cls
-            if ($compExist -match "True"){
-                $global:adComp = Get-ADComputer $userInput
+        Show-CmHeader
+        $userInput = Read-Host -Prompt "Enter the computer name"
+        Write-Output "$(Get-TimeStamp) User entered computer name: $userInput" | Out-file $logFile -append
+        $global:adComp = $userInput
+        $compExist = Find-Comp
+        # Display results
+        if ($compExist -match "True"){
+            $global:adComp = Get-ADComputer $userInput
+            Write-Output "$(Get-TimeStamp) Computer found in AD" | Out-file $logFile -append
+            do {
                 Show-CmHeader
                 Write-Host " Active Directory Results`n"
                 " Computer name: " + $global:adComp.Name 
                 $conf = Read-Host "`nIs this correct? (y or n)"
-                Write-Output "$(Get-TimeStamp) Computer found in AD" | Out-file $logFile -append
-            }
-            else {
+                switch ($conf){
+                    'y' { return $global:adComp }
+                    'n' { }
+                    default {
+                        Write-Warning "Invalid selection."
+                        pause
+                    }
+                }
+            } while ($conf -eq 'n')
+        }
+        else {
             $global:adComp = $null
+            Write-Output "$(Get-TimeStamp) Computer not found" | Out-file $logFile -append
+            do {
                 Show-CmHeader
-                Write-Output "$(Get-TimeStamp) Computer not found" | Out-file $logFile -append
                 Write-Host " Active Directory Results`n"
                 Write-Host " Computer:" $userInput "was not found.`n"
                 Write-Host " R: Try again"
@@ -256,31 +307,51 @@ function Get-Comp {
                 Write-Host " Q: Quit"
                 $conf = Read-Host -Prompt "Please make a selection"
                 switch ($conf){
-                    'm' {
-                    return $global:adUser
-                    }
+                    'r' { }
+                    'm' { return $global:adUser }
                     'q' { exit }
+                    default {
+                        Write-Warning "Invalid selection."
+                        pause
+                    }
                 }
-            }
-            cls
+            } while ($conf -ne 'm')
+        }
     } While ($conf -ne 'y')
-
 }
 # Show the bitlocker key of computer
 function Show-Bl {
     $bitlocker = (Get-ADObject -Server $global:adDc -Filter {objectclass -eq 'msFVE-RecoveryInformation'} -SearchBase $global:adComp.DistinguishedName -Properties 'msFVE-RecoveryPassword').'msFVE-RecoveryPassword'
-    Write-Output "$(Get-TimeStamp) Bitlocker keys: $bitlocker" | Out-file $logFile -append
-    Show-CmHeader
-    " Bitlocker recovery key(s):`n "
-    $bitlocker
-    $conf = Read-Host "`nCopy Bitlocker key to clipboard? (y or n)"
-    if ($conf -eq 'y') {
-        Set-Clipboard -Value $bitlocker
-        "`n Bitlocker key copied to clipboard.`n"
-        Write-Output "$(Get-TimeStamp) Bitlocker key copied to clipboard" | Out-file $logFile -append  
-    } else { "`n Bitlocker key not copied to clipboard.`n" }
-    $bitlocker = $null
+    if ($bitlocker -ne $null) {
+        Write-Output "$(Get-TimeStamp) Bitlocker key(s): $bitlocker" | Out-file $logFile -append
+        do {
+            Show-CmHeader
+            " Bitlocker recovery key(s):`n "
+            $bitlocker
+            $conf = Read-Host "`nCopy Bitlocker key to clipboard (y or n)"
+            switch ($conf){
+                'y'{
+                    Set-Clipboard -Value $bitlocker
+                    "`n Bitlocker key copied to clipboard.`n"
+                    Write-Output "$(Get-TimeStamp) Bitlocker key copied to clipboard" | Out-file $logFile -append
+                }
+                'n'{
+                    "`n Bitlocker key not copied to clipboard.`n"
+                    Write-Output "$(Get-TimeStamp) Bitlocker key copied to clipboard" | Out-file $logFile -append
+                }
+                default{
+                    Write-Warning "Invalid selection."
+                    pause
+                }
+            }    
+        } while ($conf -notin ('y','n'))
+    } 
+    else {
+        Write-Warning " Bitlocker recovery key was not found."
+        Write-Output "$(Get-TimeStamp) Bitlocker key not found in AD" | Out-file $logFile -append
+    }
     pause
+    $bitlocker = $null
 }
 # Show the LAPS of computer
 function Show-Laps {
@@ -288,7 +359,10 @@ function Show-Laps {
     Write-Output "$(Get-TimeStamp) LAPS: $laPass" | Out-file $logFile -append
     Show-CmHeader
     "`n LAPS: $laPass"
-    $conf = Read-Host "`n Copy LAPS to clipboard? (y or n)"
+    do {
+        $conf = Read-Host "`nCopy LAPS to clipboard? (y or n)"
+        if ($conf -notin ('y','n')) { Write-Warning "Invalid selection." }    
+    } while ($conf -notin ('y','n'))
     if ($conf -eq 'y') {
         Get-ADComputer $global:adComp -Server $global:adDc -Properties * | select -ExpandProperty ms-Mcs-AdmPwd | Set-Clipboard
         "`n Password copied to clipboard.`n"
@@ -306,28 +380,19 @@ function Show-CompMenu {
         Write-Host " 3: Display the local administrator password (LAPS)"
         Write-Host " M: Return to the main menu"
         Write-Host " Q: Quit"
-        $selection = Read-Host "Please make a selection"
-        cls
-        switch ($selection){
-            '1' {
-                Get-Comp
+        $conf = Read-Host "Please make a selection"
+        switch ($conf){
+            '1' { Get-Comp }
+            '2' { Show-Bl }
+            '3' { Show-Laps }
+            'm' { return }
+            'q' { exit }
+            default {
+                Write-Warning "Invalid selection."
+                pause
             }
-            '2' {
-                Show-Bl
-            }
-            '3' {
-                Show-Laps
-            }
-            'q' {
-                Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
-                exit
-            }
-        }
-        if ($selection -notin (1,2,3,'m','q')) {
-            Write-Warning "Invalid selection. Please try again."
-            pause
-        }
-    } until ($selection -eq 'm')
+        } 
+    } while ($conf -ne 'm')
 }
 # Displays the user menu
 function Show-UserMenu {  
@@ -339,30 +404,32 @@ function Show-UserMenu {
         Write-Host " 4: Manage group membership"
         Write-Host " M: Return to the main menu"
         Write-Host " Q: Quit"
-        $selection = Read-Host "Please make a selection"
-        cls
-        switch ($selection){
-            '1' { Get-User }
-            '2' { UserReset }
-            '3' { UserUnlock }
-            '4' { Show-GroupMenu }
-            'q' {
-                Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
-                exit
+            $conf = Read-Host "Please make a selection"
+            switch ($conf){
+                '1' { Get-User }
+                '2' { Set-UserPass }
+                '3' { Set-UserUnlock }
+                '4' { Show-GroupMenu }
+                'm' { return }
+                'q' { exit }
+                default {
+                    Write-Warning "Invalid selection."
+                    pause
+                }
             }
-        }
-        if ($selection -notin (1,2,3,4,'m','q')) {
-            Write-Warning "Invalid selection."
-            pause
-        }
-    } until ($selection -eq 'm')
+    } while ($conf -ne 'm')
 }
-# Resets the user account
-function UserReset {
+# Resets the user account password
+function Set-UserPass {
     Show-UmHeader
     $pwdDate = $global:adUser.passwordlastset.ToShortDateString()
     Write-Host " Username:" $global:adUser.Name
     Write-Host " Password last set on" $pwdDate
+    do {
+        $conf = Read-Host "`nAre you sure you want to set a new password? (y or n)"
+        if ($conf -notin ('y','n')) { Write-Warning "Invalid selection." }
+        switch ($conf) { 'n' { return } }   
+    } while ($conf -notin ('y','n'))
     $newpass = Read-Host -Prompt " Enter the new password" -AsSecureString
     Set-ADAccountPassword -Identity $global:adUser -Server $global:adDc -NewPassword $newpass -Reset
     $global:adUser = Get-ADUser -filter { SamAccountName -eq $global:adUser } -properties passwordlastset
@@ -375,7 +442,7 @@ function UserReset {
         Write-Output "$(Get-TimeStamp) Password was reset" | Out-file $logFile -append
     }
     else {
-        Write-Warning $global:adUser.Name + "'s password has not been reset. Please try again.`n" -Category InvalidOperation
+        Write-Warning $global:adUser.Name + "'s password has not been reset. Please try again.`n"
         Write-Output "$(Get-TimeStamp) ERROR: Password was not reset" | Out-file $logFile -append
     }
     # Same thing but require change password at next logon
@@ -383,7 +450,7 @@ function UserReset {
     pause
 }
 # Unlocks the user account
-function UserUnlock {
+function Set-UserUnlock {
     Show-UmHeader 
     $lockStatus = Show-UserLock
     if ($lockStatus -match "True")
@@ -397,7 +464,7 @@ function UserUnlock {
             Write-Output "$(Get-TimeStamp) Account unlocked" | Out-file $logFile -append 
         }
     }
-    else { "No action taken.`n" }
+    else { " No action taken.`n" }
     pause
 }
 # Get user group input
@@ -410,19 +477,38 @@ function Get-UserGroup {
         $groupFound = Find-UserGroup
         if ($groupFound) {
             $global:adGroup = Get-ADGroup -Server $global:adDc -Identity $userInput
-            Write-Output "$(Get-TimeStamp) Group found in AD" | Out-file $logFile -append
-            Show-GmHeader
-            Write-Host " Active Directory Results`n"
-            Write-Host " Group name: "$global:adGroup.Name
-            $conf = Read-Host "`nIs this correct? (y or n)"
+            Write-Output "$(Get-TimeStamp) Group $userInput found in AD" | Out-file $logFile -append
+            do {
+                Show-GmHeader
+                Write-Host " Active Directory Results`n"
+                Write-Host " Group name: "$global:adGroup.Name
+                $conf = Read-Host "`nIs this correct? (y or n)"
+                if ($conf -notin ('y','n')) { Write-Warning "Invalid selection." }
+            } while ($conf -notin ('y','n'))
         }
         else {
-            Show-GmHeader
-            Read-Host -Prompt "`n Group not found.`n`nPress Enter to try again"
-            Write-Output "$(Get-TimeStamp) Group not found" | Out-file $logFile -append
+            $global:adGroup = $null
+            Write-Output "$(Get-TimeStamp) Group $userInput not found" | Out-file $logFile -append
+            do {
+                Show-GmHeader
+                Write-Host " Group $userInput not found."
+                Write-Host " R: Try again"
+                Write-Host " M: Return to the main menu"
+                Write-Host " Q: Quit"
+                $conf = Read-Host -Prompt "Please make a selection"
+                switch ($conf){
+                    'r' { }
+                    'm' { return $global:adGroup }
+                    'q' { exit }
+                    default {
+                        Write-Warning "Invalid selection."
+                        pause
+                    }
+                }
+            } while ($conf -ne 'm')
         }
     } While ($conf -ne 'y')
-    cls
+    return $global:adGroup
 }
 # Add user to $global:adGroup
 function Add-UserToGroup {
@@ -439,18 +525,17 @@ function Add-UserToGroup {
         " Adding " + $global:adUser.Name + " to " + $global:adGroup.Name + "..."
         Add-ADGroupMember -Identity $global:adGroup.Name -Members $global:adUser -Server $global:adDc
         $groupFiltered = ADPrincipalGroupMembership $global:adUser -Server $global:adDc | select Name | Where-Object {$_.Name -eq $global:adGroup.Name} | Sort Name
-        if ($global:adGroup.Name -eq $groupFiltered.Name)
-        {
+        if ($global:adGroup.Name -eq $groupFiltered.Name) {
             " " + $global:adUser.Name + " has successfully been added to " + $global:adGroup.Name + ".`n"
             Write-Output "$(Get-TimeStamp) Added to $groupFiltered" | Out-file $logFile -append
         }
-        else
-        {
-            Write-Warning $global:adUser.Name" has not been added to $groupFiltered. Please try again.`n" -Category InvalidOperation
+        else {
+            Write-Warning $global:adUser.Name" has not been added to $groupFiltered. Please try again.`n"
             Write-Output "$(Get-TimeStamp) ERROR: Unable to add to $groupFiltered" | Out-file $logFile -append
         }
     }
     pause
+    cls
 }
 # Show user current group memberships
 function Show-UserGroups {
@@ -474,9 +559,8 @@ function Show-GroupMenu {
         Write-Host " 5: Add to a different group"
         Write-Host " M: Return to the user menu"
         Write-Host " Q: Quit"
-        $selection = Read-Host "Please make a selection"
-        cls
-        switch ($selection){
+        $conf = Read-Host "Please make a selection"
+        switch ($conf){
             '1' {
                 Show-UserGroups
                 pause
@@ -495,18 +579,16 @@ function Show-GroupMenu {
             }
             '5' {
                 Get-UserGroup
-                Add-UserToGroup
+                if ($global:adGroup -ne $null) { Add-UserToGroup }
             }
-            'q' {
-                Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
-                exit
-            }
+            'm' { return }
+            'q' { exit }
+            default {
+                Write-Warning "Invalid selection."
+                pause
+            } 
         }
-        if ($selection -notin (1,2,3,4,5,'m','q')) {
-            Write-Warning "Invalid selection."
-            pause
-        }
-    } until ($selection -eq 'm')
+    } while ($conf -ne 'm') 
 }
 # Show Main Menu
 Write-Output "`n`n$(Get-TimeStamp) Session started" | Out-file $logFile -append  
@@ -516,9 +598,8 @@ do {
     Write-Host " 2: Computer management menu"
     Write-Host " 3. Change active DC"
     Write-Host " Q: Quit"
-    $selection = Read-Host "Please make a selection"
-    cls
-    switch ($selection){
+    $conf = Read-Host "Please make a selection"
+    switch ($conf){
         '1' {
             if ($global:adUser -eq $null) { Get-User }
             if ($global:adUser -ne $null) { Show-UserMenu }
@@ -528,11 +609,10 @@ do {
             if ($global:adComp -ne $null) { Show-CompMenu }
         }
         '3' { Get-Dc }
-
+        'q' { exit }
+        default {
+            Write-Warning "Invalid selection."
+            pause
+        }
     }
-    if ($selection -notin (1,2,3,'q')) {
-        Write-Warning "Invalid selection."
-        pause
-    }
-} until ($selection -eq 'q')
-Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append
+} while ($conf -ne 'q')
