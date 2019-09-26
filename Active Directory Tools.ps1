@@ -68,13 +68,6 @@ catch {
     pause
     exit
 }
-#resize and color the display
-$pshost = get-host
-$pswindow = $pshost.ui.rawui
-$pswindow.windowtitle = "AD Tools"
-$pswindow.foregroundcolor = "White"
-$pswindow.backgroundcolor = "Black"
-cls
 # Set location and file name of log file
 $logDir = "C:\Users\" + $env:UserName + "\Documents\"
 $logFile = $logDir + "adtlog.txt" 
@@ -83,7 +76,7 @@ $global:adDc = Get-ADDomainController #contains working DC
 $global:adUser = $null #contains working username
 $global:adComp = $null #contains working computer name
 $global:adGroup = $null #contains group name that user will be added to in UserGroup function
-$global:hRule = "======================================================"
+$global:hRule = "======================================================" #horizontal rule used in menus
 ## Define all functions
 # Display the timestamp for logging
 function Get-TimeStamp {
