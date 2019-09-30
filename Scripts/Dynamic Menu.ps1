@@ -8,12 +8,15 @@
 
     1.0 | 09/26/2019 | Kevin Wells
         Initial creation
+    1.1 | 09/30/2019 | Kevin Wells
+        Made menuTitle a mandatory invoked expression instead of just a string
 
 .LINK
     github.com/kawells
 #>
 Function Show-DynamicMenu{
     Param(
+        [Parameter(Mandatory=$true)]
         [string]$menuTitle,
         [Parameter(Mandatory=$true)]
         [array]$menuKeys,
@@ -28,10 +31,10 @@ Function Show-DynamicMenu{
         return
     }
     else { $menuLength = $menuKeys.Length }
-    do {
-        if ($menuTitle -ne $null) { Write-Host $menuTitle } # displays menutitle
+    while ($true){
+        Invoke-Expression $menuTitle
         for ($i=1;$i -le $menuLength; $i++){
-            $menuKeys[$i-1] + ": " + $menuOptions[$i-1]
+            " " + $menuKeys[$i-1] + ": " + $menuOptions[$i-1]
         }
         $selection = Read-Host "Please make a selection"
         $switch = 'switch($selection){'
@@ -41,5 +44,5 @@ Function Show-DynamicMenu{
         $switch += "`n`t default { Write-Warning 'Invalid selection.' }"
         $switch += "`n}"
         Invoke-Expression $switch
-    } while ($selection -notin $menuKeys)
+    }
 }
