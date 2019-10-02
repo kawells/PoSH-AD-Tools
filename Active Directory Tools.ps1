@@ -45,86 +45,82 @@
         Added RDP option under computer menu
         Added option to view/change description field of user
         Added script exit logging
-        Added start-adtools function to organize script better
 
 .LINK
     github.com/kawells
 #>
 $global:version = "v1.7" # Set version number of script
+$WarningPreference = 'Continue' # Set warnings to display
 ## Define functions
 # Function to get the timestamp for logging
 function Get-TimeStamp { return "[{0:MM/dd/yy} {0:HH:mm:ss}]" -f (Get-Date) }
-# Start loading requirements for entire script and show main menu
-function Start-AdTools {
-    cls
-    # Self-elevate the script if required
-    try {
-        if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
-         if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
-          $CommandLine = "-File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
-          Start-Process -FilePath PowerShell.exe -Verb Runas -ArgumentList $CommandLine
-          Exit
-         }
-        }
-    }
-    catch {
-        "Elevating script to administrator... Fail"
-        Write-Output "$(Get-TimeStamp) Unable to elevate the script" | Out-file $logFile -append
-        pause
-        Start-Exit
-    }
-    "Elevating script to administrator... Ok"
-    # Define root and other paths
-    try {
-        $rootDir = "C:\Users\" + $env:UserName + "\Documents\"
-        $logFile = $rootDir + "adtlog.txt"
-    }
-    catch {
-        "Loading log... Fail"
-        Write-Output "$(Get-TimeStamp) Unable to create/load log" | Out-file $logFile -append
-        pause
-        Start-Exit
-    }
-    "Loading log... Ok"
-    $WarningPreference = 'Continue' # Set warnings to display
-    # Resize and color the display
-    try {
-        $pshost = get-host
-        $pswindow = $pshost.ui.rawui
-        $pswindow.windowtitle = "AD Tools"
-        $pswindow.foregroundcolor = "White"
-        $pswindow.backgroundcolor = "Black"
-    }
-    catch { "Setting window color... Fail" }
-    "Setting window color... Ok"
-    # Load AD module or Start-Exit if failure
-    try { Import-Module activedirectory }
-    catch {
-        "Loading AD module... Fail"
-        Write-Output "$(Get-TimeStamp) Unable to load AD module" | Out-file $logFile -append
-        pause
-        Start-Exit
-    }
-    "Loading AD module... Ok"
-    # Declare global vars
-    try { $global:adDc = Get-ADDomainController } #contains working DC
-    catch {
-        "Getting current AD controller... Fail"
-        Write-Output "$(Get-TimeStamp) Unable to get current AD controller" | Out-file $logFile -append
-        pause
-        Start-Exit
-    }
-    "Getting current AD controller... Ok"
-    $global:adUser = $null #contains working username
-    $global:adComp = $null #contains working computer name
-    $global:adGroup = $null #contains group name that user will be added to in UserGroup function
-    $global:adUserGroups = $null #contains list of working user's groups
-    $global:hRule = "======================================================" #horizontal rule used in menus
-    pause # Needs to pause for user to view script load status
-    Show-MainMenu # Begins the entire menu navigation
-}
 # Define exit actions
 function Start-Exit { Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append; exit }
+## Start loading requirements for entire script and show main menu
+cls
+# Define root and other paths
+try {
+    $rootDir = "C:\Users\" + $env:UserName + "\Documents\"
+    $logFile = $rootDir + "adtlog.txt"
+}
+catch {
+    "Loading log... Fail"
+    Write-Output "$(Get-TimeStamp) Unable to create/load log" | Out-file $logFile -append
+    pause
+    Start-Exit
+}
+"Loading log... Ok"
+# Self-elevate the script if required
+try {
+    if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
+        if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
+        $CommandLine = "-File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
+        Start-Process -FilePath PowerShell.exe -Verb Runas -ArgumentList $CommandLine
+        Exit
+        }
+    }
+}
+catch {
+    "Elevating script to administrator... Fail"
+    Write-Output "$(Get-TimeStamp) Unable to elevate the script" | Out-file $logFile -append
+    pause
+    Start-Exit
+}
+"Elevating script to administrator... Ok"
+# Resize and color the display
+try {
+    $pshost = get-host
+    $pswindow = $pshost.ui.rawui
+    $pswindow.windowtitle = "AD Tools"
+    $pswindow.foregroundcolor = "White"
+    $pswindow.backgroundcolor = "Black"
+}
+catch { "Setting window color... Fail" }
+"Setting window color... Ok"
+# Load AD module or Start-Exit if failure
+try { Import-Module activedirectory }
+catch {
+    "Loading AD module... Fail"
+    Write-Output "$(Get-TimeStamp) Unable to load AD module" | Out-file $logFile -append
+    pause
+    Start-Exit
+}
+"Loading AD module... Ok"
+# Declare global vars
+try { $global:adDc = Get-ADDomainController } #contains working DC
+catch {
+    "Getting current AD controller... Fail"
+    Write-Output "$(Get-TimeStamp) Unable to get current AD controller" | Out-file $logFile -append
+    pause
+    Start-Exit
+}
+"Getting current AD controller... Ok"
+$global:adUser = $null #contains working username
+$global:adComp = $null #contains working computer name
+$global:adGroup = $null #contains group name that user will be added to in UserGroup function
+$global:adUserGroups = $null #contains list of working user's groups
+$global:hRule = "======================================================" #horizontal rule used in menus
+pause # Needs to pause for user to view script load status
 # Show default error message when invalid menu option is entered
 function Show-MenuDef{ Write-Warning "Invalid selection."; pause }
 ## Define appearance of GUI
@@ -772,5 +768,4 @@ function Show-MainMenu {
     )
     Show-DynamicMenu -menuTitle $menuTitle -menuKeys $menuKeys -menuOptions $menuOptions -menuActions $menuActions
 }
-# Start the script
-Start-AdTools
+Show-MainMenu # Begins the entire menu navigation
