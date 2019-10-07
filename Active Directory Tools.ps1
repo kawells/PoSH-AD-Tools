@@ -479,6 +479,8 @@ function Get-Dc {
             catch {
                 Write-Host ""
                 Write-Warning """$newDC"" was not found. No changes made."
+                Write-Output "$(Get-TimeStamp) Error setting DC" | Out-file $logFile -append
+                Write-Output $error[0] | Out-file $logFile -append
             }
             pause
             return $adDc
@@ -494,39 +496,45 @@ function Show-GroupMenu {
         [Parameter (Mandatory)]
         $adUser
     )
-    while ($true) {
-        Show-Header -headerType group -userName $adUser.Name -domainName $adDc.Name
-        Write-Host " 1. Display current group memberships"
-        Write-Host " 2. Add to short term debarment"
-        Write-Host " 3. Add to long term debarment"
-        Write-Host " 4. Add to permanent debarment"
-        Write-Host " 5. Add to a different group"
-        Write-Host " U. Return to the user menu"
-        Write-Host " M. Return to the main menu"
-        Write-Host " Q. Quit"
-        $selection = Read-Host "Please make a selection"
-        switch ($selection) {
-            '1'{
-                Show-Header -headerType group -userName $adUser.Name -domainName $adDc.Name
-                Write-Host "Current group memberships:`n"
-                Get-ADPrincipalGroupMembership $adUser -Server $adDc |`
-                    sort name |`
-                    select -ExpandProperty name
-                pause
+    try {
+        while ($true) {
+            Show-Header -headerType group -userName $adUser.Name -domainName $adDc.Name
+            Write-Host " 1. Display current group memberships"
+            Write-Host " 2. Add to short term debarment"
+            Write-Host " 3. Add to long term debarment"
+            Write-Host " 4. Add to permanent debarment"
+            Write-Host " 5. Add to a different group"
+            Write-Host " U. Return to the user menu"
+            Write-Host " M. Return to the main menu"
+            Write-Host " Q. Quit"
+            $selection = Read-Host "Please make a selection"
+            switch ($selection) {
+                '1'{
+                    Show-Header -headerType group -userName $adUser.Name -domainName $adDc.Name
+                    Write-Host "Current group memberships:`n"
+                    Get-ADPrincipalGroupMembership $adUser -Server $adDc |`
+                        sort name |`
+                        select -ExpandProperty name
+                    pause
+                }
+                '2'{ Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup "SG_PIV_Withdrawal_Short"; break }
+                '3'{ Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup "SG_PIV_Withdrawal_Long"; break }
+                '4'{ Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup "SG_PIV_Withdrawal_Permanent"; break }
+                '5'{
+                    $otherGroup = Get-UserGroup -adUser $adUser -adDc $adDc
+                    Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup $otherGroup
+                    break
+                }
+                'u'{ Show-UserMenu -adUser $adUser -adDc $adDc; break}
+                'm'{ Show-MainMenu -adUser $adUser -adDc $adDc; break }
+                'q'{ Start-Exit }
+                default { Write-Warning 'Invalid selection.';pause }
             }
-            '2'{ Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup "SG_PIV_Withdrawal_Short"; break }
-            '3'{ Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup "SG_PIV_Withdrawal_Long"; break }
-            '4'{ Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup "SG_PIV_Withdrawal_Permanent"; break }
-            '5'{
-                $otherGroup = Get-UserGroup -adUser $adUser -adDc $adDc
-                Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup $otherGroup
-                break
-            }
-            'u'{ Show-UserMenu -adUser $adUser -adDc $adDc; break}
-            'm'{ Show-MainMenu -adUser $adUser -adDc $adDc; break }
-            'q'{ Start-Exit }
-            default { Write-Warning 'Invalid selection.';pause }
         }
+    }
+    catch {
+        Write-Output "$(Get-TimeStamp) Error from the group menu" | Out-file $logFile -append
+        Write-Output $error[0] | Out-file $logFile -append
     }
 }
 # Displays Main Menu
@@ -540,20 +548,26 @@ function Show-MainMenu {
         [Parameter ()]
         $adUser
     )
-    while ($true) {
-        Show-Header -headerType main -domainName $adDc.Name
-        Write-Host " 1. User management menu"
-        Write-Host " 2. Computer management menu"
-        Write-Host " 3. Change active DC"
-        Write-Host " Q. Quit"
-        $selection = Read-Host "Please make a selection"
-        switch ($selection) {
-            '1'{ Show-UserMenu -adUser $adUser -adDc $adDc; break }
-            '2'{ Show-CompMenu -adComp $adComp -adDc $adDc; break }
-            '3'{ $newDc = (Get-Dc -adDc $adDc); $adDc = $newDc; break}
-            'q'{ Start-Exit }
-            default { Write-Warning 'Invalid selection.';pause }
+    try {
+        while ($true) {
+            Show-Header -headerType main -domainName $adDc.Name
+            Write-Host " 1. User management menu"
+            Write-Host " 2. Computer management menu"
+            Write-Host " 3. Change active DC"
+            Write-Host " Q. Quit"
+            $selection = Read-Host "Please make a selection"
+            switch ($selection) {
+                '1'{ Show-UserMenu -adUser $adUser -adDc $adDc; break }
+                '2'{ Show-CompMenu -adComp $adComp -adDc $adDc; break }
+                '3'{ $newDc = (Get-Dc -adDc $adDc); $adDc = $newDc; break}
+                'q'{ Start-Exit }
+                default { Write-Warning 'Invalid selection.';pause }
+            }
         }
+    }
+    catch {
+        Write-Output "$(Get-TimeStamp) Error from the main menu" | Out-file $logFile -append
+        Write-Output $error[0] | Out-file $logFile -append
     }
 }
 # Displays User menu
@@ -565,27 +579,33 @@ function Show-UserMenu {
         [Parameter ()]
         $adUser
     )
-    while ($true) {
-        if ($adUser -eq $null) { $adUser = Get-User -adDc $adDc }
-        Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
-        Write-Host " 1. Enter a new username"
-        Write-Host " 2. Reset the password"
-        Write-Host " 3. Unlock the account"
-        Write-Host " 4. Manage group membership"
-        Write-Host " 5. Manage user description"
-        Write-Host " M. Return to the main menu"
-        Write-Host " Q. Quit"
-        $selection = Read-Host "Please make a selection"
-        switch ($selection) {
-            '1'{ $adUser = Get-User -adUser $adUser -adDc $adDc; break }
-            '2'{ Set-UserPass -adUser $adUser -adDc $adDc; break }
-            '3'{ $adUser = Set-UserUnlock -adUser $adUser -adDc $adDc; break }
-            '4'{ Show-GroupMenu -adUser $adUser -adDc $adDc; break }
-            '5'{ $adUser = Set-UserDesc -adUser $adUser -adDc $adDc; break }
-            'm'{ Show-MainMenu -adUser $adUser -adDc $adDc; break }
-            'q'{ Start-Exit }
-            default { Write-Warning 'Invalid selection.';pause }
+    try {
+        while ($true) {
+            if ($adUser -eq $null) { $adUser = Get-User -adDc $adDc }
+            Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+            Write-Host " 1. Enter a new username"
+            Write-Host " 2. Reset the password"
+            Write-Host " 3. Unlock the account"
+            Write-Host " 4. Manage group membership"
+            Write-Host " 5. Manage user description"
+            Write-Host " M. Return to the main menu"
+            Write-Host " Q. Quit"
+            $selection = Read-Host "Please make a selection"
+            switch ($selection) {
+                '1'{ $adUser = Get-User -adUser $adUser -adDc $adDc; break }
+                '2'{ Set-UserPass -adUser $adUser -adDc $adDc; break }
+                '3'{ $adUser = Set-UserUnlock -adUser $adUser -adDc $adDc; break }
+                '4'{ Show-GroupMenu -adUser $adUser -adDc $adDc; break }
+                '5'{ $adUser = Set-UserDesc -adUser $adUser -adDc $adDc; break }
+                'm'{ Show-MainMenu -adUser $adUser -adDc $adDc; break }
+                'q'{ Start-Exit }
+                default { Write-Warning 'Invalid selection.';pause }
+            }
         }
+    }
+    catch {
+        Write-Output "$(Get-TimeStamp) Error from the user menu" | Out-file $logFile -append
+        Write-Output $error[0] | Out-file $logFile -append
     }
 }
 # Displays Computer menu
@@ -597,25 +617,31 @@ function Show-CompMenu {
         [Parameter ()]
         $adComp
     )
-    while ($true) {
-        if ($adComp -eq $null) { $adComp = (Get-Comp -adDc $adDc) }
-        Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
-        Write-Host " 1. Enter a new computer name"
-        Write-Host " 2. Display the Bitlocker recovery key"
-        Write-Host " 3. Display the local administrator password (LAPS)"
-        Write-Host " 4. Open RDP session"
-        Write-Host " M. Return to the main menu"
-        Write-Host " Q. Quit"
-        $selection = Read-Host "Please make a selection"
-        switch ($selection) {
-            '1'{ $adComp = (Get-Comp -adComp $adComp -adDc $adDc); break }
-            '2'{ Show-Bl -adComp $adComp -adDc $adDc; break }
-            '3'{ Show-Laps -adComp $adComp -adDc $adDc; break }
-            '4'{ Start-Rdp -adComp $adComp; break }
-            'm'{ Show-MainMenu -adComp $adComp -adDc $adDc; break }
-            'q'{ Start-Exit }
-            default { Write-Warning 'Invalid selection.';pause }
+    try {
+        while ($true) {
+            if ($adComp -eq $null) { $adComp = (Get-Comp -adDc $adDc) }
+            Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+            Write-Host " 1. Enter a new computer name"
+            Write-Host " 2. Display the Bitlocker recovery key"
+            Write-Host " 3. Display the local administrator password (LAPS)"
+            Write-Host " 4. Open RDP session"
+            Write-Host " M. Return to the main menu"
+            Write-Host " Q. Quit"
+            $selection = Read-Host "Please make a selection"
+            switch ($selection) {
+                '1'{ $adComp = (Get-Comp -adComp $adComp -adDc $adDc); break }
+                '2'{ Show-Bl -adComp $adComp -adDc $adDc; break }
+                '3'{ Show-Laps -adComp $adComp -adDc $adDc; break }
+                '4'{ Start-Rdp -adComp $adComp; break }
+                'm'{ Show-MainMenu -adComp $adComp -adDc $adDc; break }
+                'q'{ Start-Exit }
+                default { Write-Warning 'Invalid selection.';pause }
+            }
         }
+    }
+    catch {
+        Write-Output "$(Get-TimeStamp) Error from the computer menu" | Out-file $logFile -append
+        Write-Output $error[0] | Out-file $logFile -append
     }
 }
 ## Begin Menu Display
