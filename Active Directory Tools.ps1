@@ -338,7 +338,7 @@ function Set-UserPass {
         }
         else { Write-Warning "The password has not been set. Please try again."; pause }
         # Same thing but require change password at next logon
-        #Set-ADAccountPassword $global:adUser -NewPassword $newpass -Reset -PassThru | Set-ADuser -ChangePasswordAtLogon $True
+        #Set-ADAccountPassword $adUser -NewPassword $newpass -Reset -PassThru | Set-ADuser -ChangePasswordAtLogon $True
     }
 }
 # Unlocks the user account
@@ -431,7 +431,7 @@ function Add-UserToGroup {
         $adGroup
     )
     # Get group object
-    $adGroupObj = Get-ADGroup -Identity $adGroup -Server $global:adDc
+    $adGroupObj = Get-ADGroup -Identity $adGroup -Server $adDc
     $adGroup = $adGroupObj
     Show-Header -headerType group -userName $adUser.Name -domainName $adDc.Name
     # If user is already in the group, take no action
