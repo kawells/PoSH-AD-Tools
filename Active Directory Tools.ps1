@@ -45,32 +45,30 @@
         Added RDP option under computer menu
         Added option to view/change description field of user
         Added script exit logging
+    2.0 | 10/15/2020 | Kevin Wells
+        Rewrote functions to provide parameters and remove global variables
+        Rewrote the logic for the way some of the confirmations were written
+        Rewrote logging to remove user activity and to include errors thrown
 
 .LINK
     github.com/kawells
 #>
-$global:version = "v1.7" # Set version number of script
-$WarningPreference = 'Continue' # Set warnings to display
-## Define functions
+cls
 # Function to get the timestamp for logging
 function Get-TimeStamp { return "[{0:MM/dd/yy} {0:HH:mm:ss}]" -f (Get-Date) }
-# Define exit actions
-function Start-Exit { Write-Output "$(Get-TimeStamp) Session ended" | Out-file $logFile -append; exit }
-## Start loading requirements for entire script and show main menu
-cls
-# Define root and other paths
+# Specify log location
 try {
     $rootDir = "C:\Users\" + $env:UserName + "\Documents\"
     $logFile = $rootDir + "adtlog.txt"
 }
 catch {
-    "Loading log... Fail"
-    Write-Output "$(Get-TimeStamp) Unable to create/load log" | Out-file $logFile -append
+    Write-Host "Loading log.............[Fail]"
+    Write-Output $error[0] | Out-file $logFile -append
     pause
     Start-Exit
 }
-"Loading log... Ok"
-# Self-elevate the script if required
+Write-Host "Loading log.............[Good]"
+# Self elevate the script
 try {
     if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
         if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
@@ -81,12 +79,13 @@ try {
     }
 }
 catch {
-    "Elevating script to administrator... Fail"
+    Write-Host "Elevating script........[Fail]"
     Write-Output "$(Get-TimeStamp) Unable to elevate the script" | Out-file $logFile -append
+    Write-Output $error[0] | Out-file $logFile -append
     pause
     Start-Exit
 }
-"Elevating script to administrator... Ok"
+Write-Host "Elevating script........[Good]"
 # Resize and color the display
 try {
     $pshost = get-host
@@ -95,677 +94,573 @@ try {
     $pswindow.foregroundcolor = "White"
     $pswindow.backgroundcolor = "Black"
 }
-catch { "Setting window color... Fail" }
-"Setting window color... Ok"
-# Load AD module or Start-Exit if failure
+catch {
+    Write-Host "Setting window color....[Fail]"
+    Write-Output "$(Get-TimeStamp) Unable to elevate the script" | Out-file $logFile -append
+    Write-Output $error[0] | Out-file $logFile -append
+}
+Write-Host "Setting window color....[Good]"
+# Load AD module
 try { Import-Module activedirectory }
 catch {
-    "Loading AD module... Fail"
+    Write-Host "Loading AD module.......[Fail]"
     Write-Output "$(Get-TimeStamp) Unable to load AD module" | Out-file $logFile -append
+    Write-Output $error[0] | Out-file $logFile -append
     pause
     Start-Exit
 }
-"Loading AD module... Ok"
-# Declare global vars
-try { $global:adDc = Get-ADDomainController } #contains working DC
+Write-Host "Loading AD module.......[Good]"
+try { $adDc = Get-ADDomainController } #contains working DC
 catch {
-    "Getting current AD controller... Fail"
+    Write-Host "Getting current DC......[Fail]"
     Write-Output "$(Get-TimeStamp) Unable to get current AD controller" | Out-file $logFile -append
+    Write-Output $error[0] | Out-file $logFile -append
     pause
     Start-Exit
 }
-"Getting current AD controller... Ok"
-$global:adUser = $null #contains working username
-$global:adComp = $null #contains working computer name
-$global:adGroup = $null #contains group name that user will be added to in UserGroup function
-$global:adUserGroups = $null #contains list of working user's groups
-$global:hRule = "======================================================" #horizontal rule used in menus
-pause # Needs to pause for user to view script load status
-# Show default error message when invalid menu option is entered
-function Show-MenuDef{ Write-Warning "Invalid selection."; pause }
-## Define appearance of GUI
-# Show overall script header
+Write-Host "Getting current DC......[Good]"
+#Pause at completion of load screen
+pause
+# Define what to do upon exit of menu
+function Start-Exit { exit }
+# Outputs text menu based upon -headerType parameter
 function Show-Header {
-    cls
-    Write-Host $global:hRule
-    Write-Host "            Active Directory Tools"$global:version
-    Write-Host $global:hRule
-}
-# Show header for user menu
-function Show-UmHeader {
-    Show-Header
-    if ($global:adUser -ne $null ) { Write-Host "User Menu:" $global:adUser.SamAccountName "on"$global:adDc.Name }
-    else { Write-Host "User Menu:"$global:adDc.Name }
-    Write-Host $global:hRule
-}
-# Show header for computer menu
-function Show-CmHeader {
-    Show-Header
-    if ($global:adComp -ne $null ) { Write-Host "Computer Menu:" $global:adComp.Name "on"$global:adDc.Name}
-    else { Write-Host "Computer Menu:"$global:adDc.Name }
-    Write-Host $global:hRule
-}
-# Show header for group membership menu
-function Show-GmHeader {
-    Show-Header
-    Write-Host "User Group Menu:" $global:adUser.SamAccountName "on"$global:adDc.Name
-    Write-Host $global:hRule 
-}
-# Show header for main menu
-function Show-MmHeader {
-    Show-Header
-    Write-Host "Main Menu:"$global:adDc.Name
-    Write-Host $global:hRule
-}
-# Show header for DC menu
-function Show-DmHeader {
-    Show-Header
-    Write-Host "Domain Controller Menu:"$global:adDc.Name
-    Write-Host $global:hRule
-}
-# Show header for user description menu
-function Show-DeHeader {
-    Show-Header
-    Write-Host "User Description Menu:"$global:adUser.SamAccountName "on"$global:adDc.Name
-    Write-Host $global:hRule
-}
-## Create dynamic menus based upon passed arrays
-function Show-DynamicMenu{
-    Param(
-        [Parameter(Mandatory=$true)]
-        [string]$menuTitle,
-        [Parameter(Mandatory=$true)]
-        [array]$menuKeys,
-        [Parameter(Mandatory=$true)]
-        [array]$menuOptions,
-        [Parameter(Mandatory=$true)]
-        [array]$menuActions
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        [ValidateSet('main','user','group','comp','domain')]
+        [string[]]
+        $headerType,
+        [Parameter ()]
+        [string[]]
+        $domainName,
+        [Parameter ()]
+        [string[]]
+        $userName,
+        [Parameter ()]
+        [string[]]
+        $compName
     )
-    # validates that the number of objects in keys, options, and actions match
-    if (-Not (($menuKeys.Length -eq $menuOptions.Length) -and ($menuOptions.Length -eq $menuActions.Length))) {
-        Write-Error "menuKeys, menuOptions, and menuActions must have the same number of objects in each array."
-        return
+    $adtVersion = "v2.0" # Set version number of script
+    $hRule = "======================================================" #horizontal rule used in menus
+    # Comment the next line and uncomment the one below that to restore normal menu behavior, hiding errors
+    # $header = 'Write-Host "$hRule`n            Active Directory Tools $adtVersion`n$hRule`n'
+    $header = 'clear;Write-Host "$hRule`n            Active Directory Tools $adtVersion`n$hRule`n'
+    switch($headerType){
+        'main'{$header += 'Main Menu: $domainName`n$hRule"'}
+        'user'{
+            if ($userName -ne $null) { $header += 'User Menu: $userName on $domainName`n$hRule"' }
+            else { $header += 'User Menu: $domainName`n$hRule"' }
+        }
+        'group'{$header += 'Group Menu: $userName on $domainName`n$hRule"'}
+        'comp'{
+            if ($compName -ne $null) { $header += 'Computer Menu: $compName on $domainName`n$hRule"' }
+            else { $header += 'Computer Menu: $domainName`n$hRule"' }
+        }
+        'domain'{$header += 'DC Menu: $domainName`n$hRule"'}
+        default{$header += '"'}
     }
-    else { $menuLength = $menuKeys.Length }
-    while ($true){
-        Invoke-Expression $menuTitle
-        for ($i=1;$i -le $menuLength; $i++){
-            " " + $menuKeys[$i-1] + ": " + $menuOptions[$i-1]
-        }
-        $selection = Read-Host "Please make a selection"
-        $switch = 'switch($selection){'
-        for($i=1;$i -le $menuLength; $i++){
-            $switch += "`n`t $($menuKeys[$i-1]) { $($menuActions[$i-1]); break }"
-        }
-        $switch += "`n`t default { Write-Warning 'Invalid selection.';pause }"
-        $switch += "`n}"
-        Invoke-Expression $switch
-    }
+    invoke-expression $header
 }
-## Define user management functions
-# Get the username
-function Get-User {
-    do { 
-        Show-UmHeader
-        $userInput = Read-Host -Prompt "Enter the username"
-        Write-Output "$(Get-TimeStamp) User entered username: $userInput" | Out-file $logFile -append
-        $global:adUser = $userInput
-        $userFound = Find-User
-        if ($userFound -match "True") {
-            $global:adUser = Get-ADUser $userInput -server $global:adDc -properties PasswordLastSet
-            Write-Output "$(Get-TimeStamp) Account found in AD" | Out-file $logFile -append
-            do {
-                Show-UmHeader
-                Write-Host " Active Directory Results`n"
-                Write-Host " Username:"$global:adUser.SamAccountName
-                $userLocked = Show-UserLock
-                $userPassSet = Show-UserPassSet
-                $conf = Read-Host "`nIs this correct? (y or n)"
-                switch ($conf){
-                    'y' {
-                        $global:adUserGroups = (Get-ADPrincipalGroupMembership $global:adUser -Server $global:adDc | select name | sort name).Name
-                        Show-UserMenu
-                        break
-                    }
-                    'n' { $global:adUser = $null; break }
-                    default { Show-MenuDef }
-                }
-            } while ($conf -ne 'n')
-        }
-        else {
-            $global:adUser = $null
-            Write-Output "$(Get-TimeStamp) Account not found" | Out-file $logFile -append
-            do {
-                Show-UmHeader
-                Write-Host " Active Directory Results`n"
-                Write-Host " Username:" $userInput "was not found.`n"
-                Write-Host " R: Try again"
-                Write-Host " M: Return to the main menu"
-                Write-Host " Q: Quit"
-                $conf = Read-Host -Prompt "Please make a selection"
-                switch ($conf){
-                    'r' { break }
-                    'm' { Show-MainMenu;break }
-                    'q' { Start-Exit }
-                    default { Show-MenuDef }
-                }
-            } while ($conf -ne 'r')
-        }
-    } While ($conf -ne 'y')
-    return $global:adUser
-}
-# Verify user in AD
-function Find-User {
-    $accountExist = [bool] (Get-ADUser -Server $global:adDc -Filter "SamAccountName -eq '$global:adUser'")
-    return $accountExist
-}
-# Display and return user account lock status
-function Show-UserLock {
-    $userLocked = [bool] (Get-ADUser -Server $global:adDc -Filter "SamAccountName -eq '$global:adUser'" -Properties * | Select-Object LockedOut)
-    switch ($userLocked){
-        'True'{
-            Write-Host " Status: Locked"
-            Write-Output "$(Get-TimeStamp) Account status: locked" | Out-file $logFile -append 
-        }
-        'False'{
-            Write-Host " Status: Unlocked"
-            Write-Output "$(Get-TimeStamp) Account status: unlocked" | Out-file $logFile -append
-        }
-        default {
-            Write-Host " Status: Unable to determine lock status"
-            Write-Output "$(Get-TimeStamp) Unable to determine account lock status" | Out-file $logFile -append 
-        }
-    }
-    return $userLocked
-}
-# Display and return date of user account password last reset
-function Show-UserPassSet {
-    $passSet = $global:adUser.PasswordLastSet.ToShortDateString()
-    Write-Host " Password Set:" $passSet
-    return $passSet
-}
-# Resets the user account password
-function Set-UserPass {
-    if ($global:adUser -eq $null) { Get-User }
-    Show-UmHeader
-    $pwdDate = $global:adUser.passwordlastset.ToShortDateString()
-    Write-Host " Username:" $global:adUser.SamAccountName
-    Write-Host " Password last set on" $pwdDate
-    do {
-        $conf = Read-Host "`nAre you sure you want to set a new password? (y or n)"
-        if ($conf -notin ('y','n')) { Write-Warning "Invalid selection." }
-        switch ($conf) { 'n' { return } }   
-    } while ($conf -notin ('y','n'))
-    $newpass = Read-Host -Prompt "Enter the new password" -AsSecureString
-    Set-ADAccountPassword -Identity $global:adUser -Server $global:adDc -NewPassword $newpass -Reset
-    $global:adUser = Get-ADUser -filter { SamAccountName -eq $global:adUser } -properties passwordlastset
-    $pwdDate = $global:adUser.passwordlastset.ToShortDateString()
-    $dateNow = Get-Date
-    $dateNow = $dateNow.ToShortDateString()
-    # Validate password reset by comparing date password was set to today's date
-    if ($pwdDate -eq $dateNow) {
-        " " + $global:adUser.SamAccountName + "'s password has been reset.`n"
-        Write-Output "$(Get-TimeStamp) Password was reset" | Out-file $logFile -append
-    }
-    else {
-        Write-Warning $global:adUser.SamAccountName + "'s password has not been reset. Please try again.`n"
-        Write-Output "$(Get-TimeStamp) ERROR: Password was not reset" | Out-file $logFile -append
-    }
-    # Same thing but require change password at next logon
-    #Set-ADAccountPassword $global:adUser -NewPassword $newpass -Reset -PassThru | Set-ADuser -ChangePasswordAtLogon $True
-    pause
-}
-# Unlocks the user account
-function Set-UserUnlock {
-    if ($global:adUser -eq $null) { Get-User }
-    Show-UmHeader 
-    $lockStatus = Show-UserLock
-    if ($lockStatus -match "True")
-    {
-        "`n Unlocking account for " + $global:adUser.SamAccountName + "...`n"
-        Unlock-ADAccount -Identity $global:adUser
-        $lockStatus = Show-UserLock
-        if ($lockStatus -match "False")
-        {
-            " Account successfully unlocked.`n"
-            Write-Output "$(Get-TimeStamp) Account unlocked" | Out-file $logFile -append 
-        }
-    }
-    else { " No action taken.`n" }
-    pause
-}
-# Get user group input
-function Get-UserGroup {
-    if ($global:adUser -eq $null) { Get-User }
-    do { 
-        Show-GmHeader
-        $userInput = Read-Host -Prompt "Enter the group name to add the user"
-        Write-Output "$(Get-TimeStamp) User entered group: $userInput" | Out-file $logFile -append
-        $global:adGroup = $userInput
-        $groupFound = Find-UserGroup
-        if ($groupFound) {
-            $global:adGroup = Get-ADGroup -Server $global:adDc -Identity $userInput
-            Write-Output "$(Get-TimeStamp) Group $userInput found in AD" | Out-file $logFile -append
-            Show-GmHeader
-            Write-Host " Active Directory Results`n"
-            Write-Host " Group name: "$global:adGroup.Name
-            "`nIs this correct?`n Y: Yes`n N: No`n C: Cancel"
-            $conf = Read-Host -Prompt "Please make a selection"
-            switch ($conf) {
-                'y' { return $global:adGroup; break }
-                'n' { }
-                'c' { $global:adGroup = $null; Show-GroupMenu; break }
-                default { Show-MenuDef }
-            }
-        }
-        else {
-            $global:adGroup = $null
-            Write-Output "$(Get-TimeStamp) Group $userInput not found" | Out-file $logFile -append
-            do {
-                Show-GmHeader
-                Write-Host " Group $userInput not found."
-                Write-Host " R: Try again"
-                Write-Host " M: Return to the group menu"
-                Write-Host " Q: Quit"
-                $conf = Read-Host -Prompt "Please make a selection"
-                switch ($conf){
-                    'r' { }
-                    'm' { Show-GroupMenu }
-                    'q' { Start-Exit }
-                    default { Show-MenuDef }
-                }
-            } while ($conf -ne 'r')
-        }
-    } While ($conf -ne 'y')
-    return $global:adGroup
-}
-# Add user to $global:adGroup
-function Add-UserToGroup {
-    if ($global:adUser -eq $null) { Get-User }
-    Show-GMHeader
-    # If user is already in the group, take no action
-    $groupFiltered = ADPrincipalGroupMembership $global:adUser -Server $global:adDc | select Name | Where-Object {$_.Name -eq $global:adGroup.Name} | Sort Name
-    if ($global:adGroup.Name -eq $groupFiltered.Name){
-        " " + $global:adUser.Name + " is already a member of " + $global:adGroup.Name + ". No action taken.`n"
-        Write-Output "$(Get-TimeStamp) User is already in group" | Out-file $logFile -append
-    }
-    # If user is not in the group, add user to the group
-    else { 
-        Show-GMHeader
-        " Adding " + $global:adUser.Name + " to " + $global:adGroup.Name + "..."
-        Add-ADGroupMember -Identity $global:adGroup.Name -Members $global:adUser -Server $global:adDc
-        $groupFiltered = ADPrincipalGroupMembership $global:adUser -Server $global:adDc | select Name | Where-Object {$_.Name -eq $global:adGroup.Name} | Sort Name
-        if ($global:adGroup.Name -eq $groupFiltered.Name) {
-            " " + $global:adUser.Name + " has successfully been added to " + $global:adGroup.Name + ".`n"
-            Write-Output "$(Get-TimeStamp) Added to $groupFiltered" | Out-file $logFile -append
-        }
-        else {
-            Write-Warning $global:adUser.Name" has not been added to $groupFiltered. Please try again.`n"
-            Write-Output "$(Get-TimeStamp) ERROR: Unable to add to $groupFiltered" | Out-file $logFile -append
-        }
-    }
-    pause
-}
-# Show user current group memberships
-function Show-UserGroups {
-    Show-GMHeader
-    Write-Host " Current group memberships`n"
-    $global:adUserGroups
-    pause 
-}
-# Verify user group exists
-function Find-UserGroup {
-    $groupExist = Get-ADGroup -Identity $global:adGroup -Server $global:adDc
-    return $groupExist
-}
-# Show description of current user
-function Show-UserDescr {
-    Show-DeHeader
-    Write-Host "Current user description:"
-    $userDescr = Get-Aduser -Identity $global:adUser -Properties Description | Select-Object -ExpandProperty Description
-    " " + $userDescr
-    Write-Output "$(Get-TimeStamp) Current user description: $userDescr" | Out-file $logFile -append
-}
-function Set-UserDescr {
-    Show-UserDescr
-    $userInput = Read-Host -Prompt "Enter the new user description"
-    Show-UserDescr
-    "`nYou entered: " + $userInput
-    "`nIs this correct?`n Y: Yes`n N: No`n C: Cancel"
-    $conf = Read-Host -Prompt "Please make a selection"
-    switch ($conf) {
-        'y' {
-            Set-ADUser $global:adUser -Description $userInput
-            $userDescr = Get-Aduser -Identity $global:adUser -Properties Description | Select-Object -ExpandProperty Description
-            Show-DeHeader
-            " Set user description to: " + $userDescr + ""
-            Write-Output "$(Get-TimeStamp) Set new description: $userDescr" | Out-file $logFile -append
-            break
-            pause
-            Show-UserMenu
-        }
-        'n' { }
-        'c' { $global:adGroup = $null; Show-UserMenu; break }
-        default { Show-MenuDef }
-    }
-}
-## Define computer management functions
-# Get the computer name from user
+# Get the computer name from user and verify in AD
 function Get-Comp {
-    do { 
-        Show-CmHeader
-        $userInput = Read-Host -Prompt "Enter the computer name"
-        Write-Output "$(Get-TimeStamp) User entered computer name: $userInput" | Out-file $logFile -append
-        $global:adComp = $userInput
-        $compExist = Find-Comp
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter ()]
+        $adComp
+    )
+    while ($true) {
+        Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+        $compInput = Read-Host -Prompt "Enter a new computer name"
+        $compExist = [bool] (Get-ADComputer -Server $adDc -Filter { Name -eq $compInput })
         # Display results
-        if ($compExist -match "True"){
-            $global:adComp = Get-ADComputer $userInput
-            Write-Output "$(Get-TimeStamp) Computer found in AD" | Out-file $logFile -append
-            do {
-                Show-CmHeader
-                Write-Host " Active Directory Results`n"
-                " Computer name: " + $global:adComp.Name 
-                $conf = Read-Host "`nIs this correct? (y or n)"
-                switch ($conf){
-                    'y' { Show-CompMenu; break }
-                    'n' { break }
-                    default { Show-MenuDef }
-                }
-            } while ($conf -ne 'n')
+        if ($compExist){
+            $adComp = Get-ADComputer -Identity $compInput -Server $adDc -Properties *
+            Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+            Write-Host " Active computer set to $compInput."
+            pause 
+            return $adComp
         }
         else {
-            $global:adComp = $null
-            Write-Output "$(Get-TimeStamp) Computer not found" | Out-file $logFile -append
-            do {
-                Show-CmHeader
-                Write-Host " Active Directory Results`n"
-                Write-Host " Computer:" $userInput "was not found.`n"
-                Write-Host " R: Try again"
-                Write-Host " M: Return to the main menu"
-                Write-Host " Q: Quit"
-                $conf = Read-Host -Prompt "Please make a selection"
-                switch ($conf){
-                    'r' { break }
-                    'm' { Show-MainMenu;break }
-                    'q' { Start-Exit }
-                    default { Show-MenuDef }
-                }
-            } while ($conf -ne 'm')
+            Write-Warning "Computer name $compInput was not found. Please try again."
+            pause
         }
-    } While ($conf -ne 'y')
-}
-# Verify comp in AD
-function Find-Comp {
-    $compExist = [bool] (Get-ADComputer -Server $global:adDc -Filter { Name -eq $userInput })
-    return $compExist
+    }
 }
 # Show the bitlocker key of computer
 function Show-Bl {
-    $bitlocker = (Get-ADObject -Server $global:adDc -Filter {objectclass -eq 'msFVE-RecoveryInformation'} -SearchBase $global:adComp.DistinguishedName -Properties 'msFVE-RecoveryPassword').'msFVE-RecoveryPassword'
-    if ($bitlocker -ne $null) {
-        Write-Output "$(Get-TimeStamp) Bitlocker key(s): $bitlocker" | Out-file $logFile -append
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter (Mandatory)]
+        $adComp
+    )
+    try {
+        $bitlocker = Get-ADObject -SearchBase $adComp.DistinguishedName -Server $adDc -Filter 'objectclass -eq "msFVE-RecoveryInformation"' -Properties msFVE-RecoveryPassword |`
+            Select msFVE-RecoveryPassword
         do {
-            Show-CmHeader
-            " Bitlocker recovery key(s):`n "
-            $bitlocker
-            $conf = Read-Host "`nCopy Bitlocker key to clipboard (y or n)"
-            switch ($conf){
+            Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+            Write-Host " Bitlocker recovery key(s):`n "
+            $bitlocker.'msFVE-RecoveryPassword'
+            $selection = Read-Host "`nCopy Bitlocker key to clipboard (y or n)"
+            switch ($selection){
                 'y'{
-                    Set-Clipboard -Value $bitlocker
-                    "`n Bitlocker key copied to clipboard.`n"
-                    Write-Output "$(Get-TimeStamp) Bitlocker key copied to clipboard" | Out-file $logFile -append
+                    Set-Clipboard -Value $bitlocker.'msFVE-RecoveryPassword'
+                    Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+                    Write-Host " Bitlocker key(s) copied to clipboard."
+                    break
                 }
                 'n'{
-                    "`n Bitlocker key not copied to clipboard.`n"
-                    Write-Output "$(Get-TimeStamp) Bitlocker key copied to clipboard" | Out-file $logFile -append
+                    Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+                    Write-Host " Bitlocker key(s) not copied to clipboard."
+                    break
                 }
-                default{ Show-MenuDef }
+                default{ Write-Warning 'Invalid selection.';pause }
             }    
-        } while ($conf -notin ('y','n'))
+        } while ($selection -notin ('y','n'))
     } 
-    else {
-        Write-Warning " Bitlocker recovery key was not found."
-        Write-Output "$(Get-TimeStamp) Bitlocker key not found in AD" | Out-file $logFile -append
-    }
-    $bitlocker = $null
+    catch { Write-Warning "Bitlocker recovery key(s) not found." }
     pause
+    Show-CompMenu -adDc $adDc -adComp $adComp
 }
 # Show the LAPS of computer
 function Show-Laps {
-    $laPass = Get-ADComputer $global:adComp -Server $global:adDc -Properties * | select -ExpandProperty ms-Mcs-AdmPwd
-    Write-Output "$(Get-TimeStamp) LAPS: $laPass" | Out-file $logFile -append
-    Show-CmHeader
-    "`n LAPS: $laPass"
-    do {
-        $conf = Read-Host "`nCopy LAPS to clipboard? (y or n)"
-        switch ($conf) {
-            'y' {
-                Get-ADComputer $global:adComp -Server $global:adDc -Properties * | select -ExpandProperty ms-Mcs-AdmPwd | Set-Clipboard
-                "`n Password copied to clipboard.`n"
-                Write-Output "$(Get-TimeStamp) Password copied to clipboard" | Out-file $logFile -append
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter (Mandatory)]
+        $adComp
+    )
+    $laps = $adComp.'ms-Mcs-AdmPwd'
+    try {
+        Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+        Write-Host " LAPS: $laps"
+        do {
+            $selection = Read-Host "`nCopy LAPS to clipboard? (y or n)"
+            switch ($selection) {
+                'y'{
+                    Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+                    Set-Clipboard -value $laps
+                    Write-Host " Password copied to clipboard."
+                    break
+                }
+                'n'{
+                    Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+                    Write-Host " Password not copied to clipboard."
+                    break
+                }
+                default{ Write-Warning 'Invalid selection.';pause }
             }
-            'n' { "`n Password not copied to clipboard.`n" }
-            default { Show-MenuDef }
-        }
-    } while ($conf -notin ('y','n'))
-    $laPass = $null
+        } while ($selection -notin ('y','n'))
+    }
+    catch { Write-Warning "LAPS not found." }
+    $laps = $null
     pause
+    Show-CompMenu -adDc $adDc -adComp $adComp
 }
 # Start RDP session if computer is online
 function Start-Rdp {
-    $compOnline = [bool](Test-Connection -Computername $global:adComp.Name -Count 1 -Quiet)
-    if ($compOnline) { $currentComp = $global:adComp.Name; mstsc /v:$currentComp }
-    else { Write-Warning "Unable to establish connection. Computer is offline or unavailable."; pause }
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter (Mandatory)]
+        $adComp
+    )
+    Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+    Write-Host "Starting RDP session to"$adComp.Name
+    $compOnline = [bool](Test-Connection -Computername $adComp.Name -Count 1 -Quiet)
+    if ($compOnline) { $currentComp = $adComp.Name; mstsc /v:$currentComp }
+    else { Write-Warning "Unable to establish connection. Computer is offline or unavailable." }
+    pause
 }
-## Define DC Management functions
-# Verify DC in AD
-function Find-Dc { $accountExist = [bool] (Get-ADDomainController -Identity $global:adDc); return $accountExist }
-## Define all menus
-# Show user description menu
-function Show-DescrMenu {
-    if ($global:adUser -eq $null) { Get-User }
-    $menuTitle = 'Show-DeHeader'
-    $menuKeys = @(
-        '1',
-        '2',
-        'U',
-        'M',
-        'Q'
+# Get the username
+function Get-User {
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter ()]
+        $adUser
     )
-    $menuOptions = @(
-        'Display user''s current description',
-        'Change user''s description',
-        'Return to the user menu',
-        'Return to the main menu',
-        'Quit'
-    )
-    $menuActions = @(
-        'Show-UserDescr; pause',
-        'Set-UserDescr',
-        'Show-UserMenu',
-        'Show-MainMenu',
-        'Start-Exit'
-    )
-    Show-DynamicMenu -menuTitle $menuTitle -menuKeys $menuKeys -menuOptions $menuOptions -menuActions $menuActions
+    While ($true) {
+        Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+        $userInput = Read-Host -Prompt "Enter a new username"
+        $accountExist = [bool] (Get-ADUser -Server $adDc -Filter "SamAccountName -eq '$userInput'")
+        if ($accountExist) {
+            $adUser = Get-ADUser -Filter "SamAccountName -eq '$userInput'" -server $adDc -properties *
+            Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+            Write-Host "Active user set to $userInput."
+            Write-Host " Username:" $adUser.SamAccountName
+            Write-Host " Locked out:" $adUser.LockedOut
+            Write-Host " Password set:" $adUser.PasswordLastSet
+            pause 
+            Return $adUser
+            break
+        }
+        else { Write-Warning " Username $userInput was not found. Please try again.";pause }
+    }
 }
-# Displays Group menu
-function Show-GroupMenu {
-    if ($global:adUser -eq $null) { Get-User }
-    $menuTitle = 'Show-UmHeader'
-    $menuKeys = @(
-        '1',
-        '2',
-        '3',
-        '4',
-        '5',
-        'U',
-        'M',
-        'Q'
+# Resets the user account password
+function Set-UserPass {
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter (Mandatory)]
+        $adUser
     )
-    $menuOptions = @(
-        'Display current group memberships',
-        'Add to short term debarment group',
-        'Add to long term debarment group',
-        'Add to permanent debarment group',
-        'Add to a different group',
-        'Return to the user menu',
-        'Return to the main menu',
-        'Quit'
-    )
-    $menuActions = @(
-        'Show-UserGroups',
-        '$global:adGroup = Get-ADGroup -Identity "SG_PIV_Withdrawal_Short";Add-UserToGroup',
-        '$global:adGroup = Get-ADGroup -Identity "SG_PIV_Withdrawal_Long";Add-UserToGroup',
-        '$global:adGroup = Get-ADGroup -Identity "SG_PIV_Withdrawal_Permanent";Add-UserToGroup',
-        'Get-UserGroup; if ($global:adGroup -ne $null) { Add-UserToGroup }',
-        'Show-UserMenu',
-        'Show-MainMenu',
-        'Start-Exit'
-    )
-    Show-DynamicMenu -menuTitle $menuTitle -menuKeys $menuKeys -menuOptions $menuOptions -menuActions $menuActions
+    while ($true) {
+        while ($selection -ne 'y') {
+            Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+            Write-Host " Password set:" $adUser.PasswordLastSet
+            $selection = Read-Host "Are you sure you want to set a new password? (y or n)"
+            switch ($selection) {
+                'y' { break }
+                'n' { return; break }
+                default { Write-Warning 'Invalid selection.';pause }
+            }
+        }
+        $newpass = Read-Host -Prompt "Enter the new password" -AsSecureString
+        Set-ADAccountPassword -Identity $adUser -Server $adDc -NewPassword $newpass -Reset
+        $tempUserName = $adUser.SamAccountName
+        $adUser = Get-ADUser -Filter "SamAccountName -eq '$tempUserName'" -server $adDc -properties *
+        $pwdDate = $adUser.PasswordLastSet.ToShortDateString()
+        $dateNow = Get-Date
+        $dateNow = $dateNow.ToShortDateString() 
+        # Validate password reset by comparing date password was set to today's date
+        if ($pwdDate -eq $dateNow) {
+            Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+            Write-Host "The password has been set."
+            Write-Host " Password set:" $adUser.PasswordLastSet
+            pause
+            return
+        }
+        else { Write-Warning "The password has not been set. Please try again."; pause }
+        # Same thing but require change password at next logon
+        #Set-ADAccountPassword $adUser -NewPassword $newpass -Reset -PassThru | Set-ADuser -ChangePasswordAtLogon $True
+    }
 }
-# Displays User menu
-function Show-UserMenu {
-    if ($global:adUser -eq $null) { Get-User }
-    $menuTitle = 'Show-UmHeader'
-    $menuKeys = @(
-        '1',
-        '2',
-        '3',
-        '4',
-        '5',
-        'M',
-        'Q'
+# Unlocks the user account
+function Set-UserUnlock {
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter (Mandatory)]
+        $adUser
     )
-    $menuOptions = @(
-        'Enter a new username',
-        'Reset the password',
-        'Unlock the account',
-        'Manage group membership',
-        'Manage user description',
-        'Return to the main menu',
-        'Quit'
-    )
-    $menuActions = @(
-        'Get-User',
-        'Set-UserPass',
-        'Set-UserUnlock',
-        'Show-GroupMenu',
-        'Show-DescrMenu',
-        'Show-MainMenu',
-        'Start-Exit'
-    )
-    Show-DynamicMenu -menuTitle $menuTitle -menuKeys $menuKeys -menuOptions $menuOptions -menuActions $menuActions
+    $lockStatus = $adUser.LockedOut
+    if ($lockStatus -match "True")
+    {
+        Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+        Write-Host "Unlocking account ..."
+        Unlock-ADAccount -Identity $adUser -Server $adDc
+        $tempUserName = $adUser.SamAccountName
+        $adUser = Get-ADUser -Filter "SamAccountName -eq '$tempUserName'" -server $adDc -properties *
+        $lockStatus = $adUser.LockedOut
+        if ($lockStatus -match "False")
+        {
+            Write-Host " Locked out:" $adUser.LockedOut
+            pause
+            return $adUser
+        }
+        else { Write-Warning "Unable to unlock account. Please try again."; pause; return $adUser }
+    }
+    else { Write-Warning "Account is already unlocked. No action taken.";pause;return $adUser }
 }
-# Displays Computer menu
-function Show-CompMenu {
-    if ($global:adComp -eq $null) { Get-Comp }
-    $menuTitle = 'Show-CmHeader'
-    $menuKeys = @(
-        '1',
-        '2',
-        '3',
-        '4',
-        'M',
-        'Q'
+# Resets the user account password
+function Set-UserDesc {
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter (Mandatory)]
+        $adUser
     )
-    $menuOptions = @(
-        'Enter a new computer name',
-        'Display the Bitlocker recovery key',
-        'Display the local administrator password (LAPS)',
-        'Open RDP session',
-        'Return to the main menu',
-        'Quit'
+    while ($selection -ne 'y') {
+        Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+        Write-Host "Current user description:" $adUser.Description
+        $selection = Read-Host "Are you sure you want to set a new description? (y or n)"
+        switch ($selection) {
+            'y' { break }
+            'n' { return $adUser; break }
+            default { Write-Warning 'Invalid selection.';pause }
+        }
+    }
+    $newDesc = Read-Host -Prompt "Enter the new user description"
+    try {
+        Set-ADUser $adUser -Server $adDc -Description $newDesc
+        $tempUserName = $adUser.SamAccountName
+        $adUser = Get-ADUser -Filter "SamAccountName -eq '$tempUserName'" -server $adDc -properties *
+        $newDesc = $adUser.Description
+        Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+        Write-Host "New user description:" $adUser.Description
+        pause
+        return $adUser
+    }
+    catch {
+        Write-Output "$(Get-TimeStamp) Error setting user description to $newDesc" | Out-file $logFile -append
+        Write-Output $error[0] | Out-file $logFile -append
+        return $adUser
+    }
+}
+# Get user group input and validates group name, then returns group name
+function Get-UserGroup {
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter (Mandatory)]
+        $adUser
     )
-    $menuActions = @(
-        'Get-Comp',
-        'Show-Bl',
-        'Show-Laps',
-        'Start-Rdp',
-        'Show-MainMenu',
-        'Start-Exit'
+    While ($true) {
+        Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+        $userInput = Read-Host -Prompt "Enter the group name"
+        $groupExist = [bool] (Get-ADGroup -Identity $userInput -Server $adDc)
+        if ($groupExist) {
+            try {
+                $adGroup = Get-ADGroup -Identity $userInput -Server $adDc
+                return $adGroup.Name
+                break
+            }
+            catch {
+                Write-Output "$(Get-TimeStamp) Error adding user to $userInput" | Out-file $logFile -append
+                Write-Output $error[0] | Out-file $logFile -append
+                return $adGroup.Name
+            }
+        }
+        else { Write-Warning "Group $userInput was not found. Please try again.";pause }
+    }
+}
+# Adds user to group passed by parameter $adGroup
+function Add-UserToGroup {
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter (Mandatory)]
+        $adUser,
+        [Parameter (Mandatory)]
+        $adGroup
     )
-    Show-DynamicMenu -menuTitle $menuTitle -menuKeys $menuKeys -menuOptions $menuOptions -menuActions $menuActions
+    # Get group object
+    $adGroupObj = Get-ADGroup -Identity $adGroup -Server $adDc
+    $adGroup = $adGroupObj
+    Show-Header -headerType group -userName $adUser.Name -domainName $adDc.Name
+    # If user is already in the group, take no action
+    $groupFiltered = ADPrincipalGroupMembership $adUser -Server $adDc | select Name | Where-Object {$_.Name -eq $adGroup.Name} | Sort Name
+    if ($adGroup.Name -eq $groupFiltered.Name){
+        $warnString = $adUser.Name+" is already a member of "+$adGroup.Name+". No action taken."
+        $warnString | Write-Warning
+    }
+    # If user is not in the group, add user to the group
+    else { 
+        Add-ADGroupMember -Identity $adGroup.Name -Members $adUser -Server $adDc
+        $groupFiltered = ADPrincipalGroupMembership $adUser -Server $adDc | select Name | Where-Object {$_.Name -eq $adGroup.Name} | Sort Name
+        if ($adGroup.Name -eq $groupFiltered.Name) {
+            Write-Host $adUser.Name "has successfully been added to" $adGroup.Name"."
+        }
+        else {
+            $warnString = $adUser.Name+" has not been added to "+$groupFiltered+". Please try again."
+            $warnString | Write-Warning
+        }
+    }
+    pause
 }
 # Get DC from user
 function Get-Dc {
-    do {
-        Show-DmHeader
-        Write-Host " You are currently using" $global:adDc.Name
-        $conf = Read-Host "Are you sure you want to set a domain controller? (y or n)"
-        switch ($conf) {
-            'n' { return }
-            'y' { }
-            default { Show-MenuDef }
-        }   
-    } while ($conf -ne 'y')
-    do {
-        Show-DmHeader
-        $userInput = Read-Host -Prompt "Enter the domain controller to use"
-        $dcFound = Find-Dc
-        if ($dcFound -match "True") {
-            Write-Output "$(Get-TimeStamp) DC found in AD" | Out-file $logFile -append
-            Show-DmHeader
-            Write-Host " Active Directory Results`n"
-            Write-Host " Domain controller:"$userInput
-            $conf = Read-Host "`nIs this correct? (y or n)"
-            switch ($conf) {
-                'y' {
-                    $global:adDc = Get-ADDomainController -Identity $userInput
-                    Show-DmHeader
-                    " The working domain controller has been changed to " + $global:adDc.Name
-                    pause
-                    return
-                }
-                'n' { $global:adDc = Get-ADDomainController }
-                default { Show-MenuDef }
-            }
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc
+    )
+    while ($true) {
+        Show-Header -headerType domain -domainName $adDc.Name
+        Write-Host "`n Your active DC is: $adDc`n"
+        $newDc = Read-Host "Enter new DC ('C' to cancel)"
+        # Provides a way for user to break prompt loop and returns existing DC object
+        if ($newDc -eq 'c') {
+            Write-Warning "Action cancelled. No changes made."
+            pause
+            return $adDc
         }
         else {
-            $global:adDc = Get-ADDomainController
-            Write-Output "$(Get-TimeStamp) DC not found" | Out-file $logFile -append
-            do {
-                Show-DmHeader
-                Write-Host " Active Directory Results`n"
-                Write-Host " Domain controller:" $userInput "was not found.`n"
-                Write-Host " R: Try again"
-                Write-Host " M: Return to the main menu"
-                Write-Host " Q: Quit"
-                $conf = Read-Host -Prompt "Please make a selection"
-                switch ($conf){
-                    'r' { break }
-                    'm' { Show-MainMenu; break }
-                    'q' { Start-Exit }
-                    default { Show-MenuDef }
-                }
-            } while ($conf -eq 'r')
+            try {
+                $adDc = (Get-ADDomainController -Identity $newDC)
+                Write-Host "`n Active DC set to: $adDc`n"
+            }
+            catch {
+                Write-Host ""
+                Write-Warning """$newDC"" was not found. No changes made."
+                Write-Output "$(Get-TimeStamp) Error setting DC" | Out-file $logFile -append
+                Write-Output $error[0] | Out-file $logFile -append
+            }
+            pause
+            return $adDc
         }
-    } while ($conf -eq 'n')
-    return $global:adDc       
+    }
+}
+# Displays the group menu
+function Show-GroupMenu {
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter (Mandatory)]
+        $adUser
+    )
+    try {
+        while ($true) {
+            Show-Header -headerType group -userName $adUser.Name -domainName $adDc.Name
+            Write-Host " 1. Display current group memberships"
+            Write-Host " 2. Add to short term debarment"
+            Write-Host " 3. Add to long term debarment"
+            Write-Host " 4. Add to permanent debarment"
+            Write-Host " 5. Add to a different group"
+            Write-Host " U. Return to the user menu"
+            Write-Host " M. Return to the main menu"
+            Write-Host " Q. Quit"
+            $selection = Read-Host "Please make a selection"
+            switch ($selection) {
+                '1'{
+                    Show-Header -headerType group -userName $adUser.Name -domainName $adDc.Name
+                    Write-Host "Current group memberships:`n"
+                    Get-ADPrincipalGroupMembership $adUser -Server $adDc |`
+                        sort name |`
+                        select -ExpandProperty name
+                    pause
+                }
+                '2'{ Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup "SG_PIV_Withdrawal_Short"; break }
+                '3'{ Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup "SG_PIV_Withdrawal_Long"; break }
+                '4'{ Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup "SG_PIV_Withdrawal_Permanent"; break }
+                '5'{
+                    $otherGroup = Get-UserGroup -adUser $adUser -adDc $adDc
+                    Add-UserToGroup -adUser $adUser -adDc $adDc -adGroup $otherGroup
+                    break
+                }
+                'u'{ Show-UserMenu -adUser $adUser -adDc $adDc; break}
+                'm'{ Show-MainMenu -adUser $adUser -adDc $adDc; break }
+                'q'{ Start-Exit }
+                default { Write-Warning 'Invalid selection.';pause }
+            }
+        }
+    }
+    catch {
+        Write-Output "$(Get-TimeStamp) Error from the group menu" | Out-file $logFile -append
+        Write-Output $error[0] | Out-file $logFile -append
+    }
 }
 # Displays Main Menu
 function Show-MainMenu {
-    Write-Output "`n`n$(Get-TimeStamp) Session started" | Out-file $logFile -append
-    $menuTitle = 'Show-MmHeader'
-    $menuKeys = @(
-        '1',
-        '2',
-        '3',
-        'Q'
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter ()]
+        $adComp,
+        [Parameter ()]
+        $adUser
     )
-    $menuOptions = @(
-        'User management menu',
-        'Computer management menu',
-        'Change active DC',
-        'Quit'
-    )
-    $menuActions = @(
-        'Show-UserMenu',
-        'Show-CompMenu',
-        'Get-Dc',
-        'Start-Exit'
-    )
-    Show-DynamicMenu -menuTitle $menuTitle -menuKeys $menuKeys -menuOptions $menuOptions -menuActions $menuActions
+    try {
+        while ($true) {
+            Show-Header -headerType main -domainName $adDc.Name
+            Write-Host " 1. User management menu"
+            Write-Host " 2. Computer management menu"
+            Write-Host " 3. Change active DC"
+            Write-Host " Q. Quit"
+            $selection = Read-Host "Please make a selection"
+            switch ($selection) {
+                '1'{ Show-UserMenu -adUser $adUser -adDc $adDc; break }
+                '2'{ Show-CompMenu -adComp $adComp -adDc $adDc; break }
+                '3'{ $newDc = (Get-Dc -adDc $adDc); $adDc = $newDc; break}
+                'q'{ Start-Exit }
+                default { Write-Warning 'Invalid selection.';pause }
+            }
+        }
+    }
+    catch {
+        Write-Output "$(Get-TimeStamp) Error from the main menu" | Out-file $logFile -append
+        Write-Output $error[0] | Out-file $logFile -append
+    }
 }
-Show-MainMenu # Begins the entire menu navigation
+# Displays User menu
+function Show-UserMenu {
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter ()]
+        $adUser
+    )
+    try {
+        while ($true) {
+            if ($adUser -eq $null) { $adUser = Get-User -adDc $adDc }
+            Show-Header -headerType user -userName $adUser.Name -domainName $adDc.Name
+            Write-Host " 1. Enter a new username"
+            Write-Host " 2. Reset the password"
+            Write-Host " 3. Unlock the account"
+            Write-Host " 4. Manage group membership"
+            Write-Host " 5. Manage user description"
+            Write-Host " M. Return to the main menu"
+            Write-Host " Q. Quit"
+            $selection = Read-Host "Please make a selection"
+            switch ($selection) {
+                '1'{ $adUser = Get-User -adUser $adUser -adDc $adDc; break }
+                '2'{ Set-UserPass -adUser $adUser -adDc $adDc; break }
+                '3'{ $adUser = Set-UserUnlock -adUser $adUser -adDc $adDc; break }
+                '4'{ Show-GroupMenu -adUser $adUser -adDc $adDc; break }
+                '5'{ $adUser = Set-UserDesc -adUser $adUser -adDc $adDc; break }
+                'm'{ Show-MainMenu -adUser $adUser -adDc $adDc; break }
+                'q'{ Start-Exit }
+                default { Write-Warning 'Invalid selection.';pause }
+            }
+        }
+    }
+    catch {
+        Write-Output "$(Get-TimeStamp) Error from the user menu" | Out-file $logFile -append
+        Write-Output $error[0] | Out-file $logFile -append
+    }
+}
+# Displays Computer menu
+function Show-CompMenu {
+    [CmdletBinding()]
+    Param (
+        [Parameter (Mandatory)]
+        $adDc,
+        [Parameter ()]
+        $adComp
+    )
+    try {
+        while ($true) {
+            if ($adComp -eq $null) { $adComp = (Get-Comp -adDc $adDc) }
+            Show-Header -headerType comp -compName $adComp.Name -domainName $adDc.Name
+            Write-Host " 1. Enter a new computer name"
+            Write-Host " 2. Display the Bitlocker recovery key"
+            Write-Host " 3. Display the local administrator password (LAPS)"
+            Write-Host " 4. Open RDP session"
+            Write-Host " M. Return to the main menu"
+            Write-Host " Q. Quit"
+            $selection = Read-Host "Please make a selection"
+            switch ($selection) {
+                '1'{ $adComp = (Get-Comp -adComp $adComp -adDc $adDc); break }
+                '2'{ Show-Bl -adComp $adComp -adDc $adDc; break }
+                '3'{ Show-Laps -adComp $adComp -adDc $adDc; break }
+                '4'{ Start-Rdp -adComp $adComp -adDc $adDc; break }
+                'm'{ Show-MainMenu -adComp $adComp -adDc $adDc; break }
+                'q'{ Start-Exit }
+                default { Write-Warning 'Invalid selection.';pause }
+            }
+        }
+    }
+    catch {
+        Write-Output "$(Get-TimeStamp) Error from the computer menu" | Out-file $logFile -append
+        Write-Output $error[0] | Out-file $logFile -append
+    }
+}
+## Begin Menu Display
+Show-MainMenu -adDc $adDc
